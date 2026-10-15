@@ -1,0 +1,22 @@
+# Environnement Python
+venv/
+__pycache__/
+*.pyc
+*.py[cod]
+
+# Empaquetage PyInstaller (régénéré par build.bat)
+build/
+dist/
+*.spec
+build.log
+
+# Données de l'utilisateur : jamais dans le dépôt
+*.db
+*.db-wal
+*.db-shm
+*.elpro.json
+*.log
+!examples/logs/*.log
+*.csv
+*.zip
+verification.txt
