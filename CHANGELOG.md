@@ -18,4 +18,8 @@ Première version.
 - Export CSV des valeurs des canaux cochés.
 - Installateur Windows pour tous les utilisateurs ; la base de données est conservée à la désinstallation.
 
+### Corrigé (recette Windows)
+- Frise de la Vue globale : la bulle d'information ne clignote plus ; elle n'est mise à jour qu'en passant sur un autre segment et reste affichée tant que la souris est dans le segment survolé.
+- Thème sombre de Windows : texte foncé imposé partout où l'application impose un fond coloré (lignes du Journal, cellules mises en évidence du tableau de synthèse, cartes des chiffres clés, logs partiellement importés de l'onglet Fichiers).
+
 [1.0.0]: https://github.com/lucapancottigz/elpro-logs/releases/tag/v1.0.0

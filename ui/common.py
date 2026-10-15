@@ -28,6 +28,9 @@ LIBELLES_GRAVITE = {'defaut': 'Défaut', 'alarme': 'Alarme', 'alerte': 'Alerte',
                     'info': 'Information'}
 ROUGE, ORANGE, JAUNE = '#C62828', '#EF6C00', '#FFF59D'
 GRIS = '#707070'
+# Texte imposé sur tout fond coloré par l'application : reste lisible avec le thème sombre de Windows
+TEXTE_SUR_FOND = '#202020'
+FOND_GRISE = '#ECECEC'
 # Palette des courbes (distinctes, lisibles sur fond blanc)
 PALETTE = ['#1f77b4', '#d62728', '#2ca02c', '#9467bd', '#ff7f0e', '#17becf', '#8c564b', '#e377c2',
            '#7f7f7f', '#bcbd22', '#393b79', '#637939', '#8c6d31', '#843c39', '#7b4173']
@@ -197,6 +200,7 @@ def cellule(texte, droite=False, fond=None, couleur=None, gras=False, italique=F
         it.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
     if fond:
         it.setBackground(QColor(fond))
+        couleur = couleur or TEXTE_SUR_FOND        # fond imposé : texte foncé imposé aussi
     if couleur:
         it.setForeground(QColor(couleur))
     if gras or italique:

@@ -6,13 +6,13 @@ import bisect
 
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import Qt, Signal, QTimer
-from PySide6.QtGui import QCursor
+from PySide6.QtCore import Qt, Signal, QTimer, QRectF
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QSplitter, QTableWidget,
                                QHeaderView, QToolTip, QSizePolicy)
 
 import elpro_logs as L
-from ui.common import AxeHeureSuisse, cellule, preparer_tableau, nombre, duree, pluriel, ROUGE, ORANGE, JAUNE
+from ui.common import (AxeHeureSuisse, cellule, preparer_tableau, nombre, duree, pluriel, ROUGE, ORANGE, JAUNE,
+                       TEXTE_SUR_FOND)
 
 LIGNE_SYSTEME = 'Système'
 
@@ -66,6 +66,7 @@ class Frise(pg.PlotWidget):
         self.getAxis('left').setStyle(tickLength=0)
         self.setMouseTracking(True)
         self.lignes = []              # [(nom, segments d'origine, segments affichés)]
+        self._survole = None          # (ligne, segment) sous la souris : bulle déjà affichée
         self.t0 = self.t1 = None
         self._items = []
         self.scene().sigMouseMoved.connect(self._survol)
@@ -83,6 +84,7 @@ class Frise(pg.PlotWidget):
 
     def vider(self):
         self.lignes = []
+        self._survole = None
         for it in self._items:
             self.removeItem(it)
         self._items = []
@@ -96,6 +98,7 @@ class Frise(pg.PlotWidget):
         return max(100, int(self.vue.width()) or self.width())
 
     def _dessiner(self):
+        self._survole = None
         for it in self._items:
             self.removeItem(it)
         self._items = []
@@ -134,13 +137,21 @@ class Frise(pg.PlotWidget):
             return k, p.x()
         return None
 
-    def segment_a(self, k, x):
-        """Segment affiché sous la souris (état le plus grave de la case), avec ses vraies bornes."""
-        nom, segs, aff = self.lignes[k]
+    def case_a(self, k, x):
+        """Rectangle affiché sous la souris : (début, fin, état), ou None."""
+        aff = self.lignes[k][2]
         i = bisect.bisect_right([a for a, _b, _e in aff], x) - 1
         if i < 0 or x >= aff[i][1]:
             return None
-        a, b, e = aff[i]
+        return aff[i]
+
+    def segment_a(self, k, x):
+        """Segment affiché sous la souris (état le plus grave de la case), avec ses vraies bornes."""
+        nom, segs, aff = self.lignes[k]
+        c = self.case_a(k, x)
+        if c is None:
+            return None
+        a, b, e = c
         if aff is not segs:              # case réduite : chercher le segment d'origine le plus grave
             j = bisect.bisect_right([s[0] for s in segs], a) - 1
             j = max(j, 0)
@@ -150,20 +161,36 @@ class Frise(pg.PlotWidget):
                 j += 1
         return a, b, e
 
+    def rect_survol(self, k, a, b):
+        """Rectangle (coordonnées du widget) de la zone [a, b) de la ligne k, limité à la zone de tracé."""
+        r = self.vue.mapViewToScene(QRectF(a, k - 0.38, b - a, 0.76)).boundingRect()
+        r = r.intersected(self.vue.sceneBoundingRect())
+        return self.mapFromScene(r).boundingRect().adjusted(0, 0, 1, 1)
+
     def _survol(self, pos):
+        """Bulle mise à jour seulement quand la souris change de segment ; elle reste affichée tant que la
+        souris est dans le rectangle du segment (Qt la masque d'elle-même en sortant du rectangle)."""
         r = self._position(pos)
-        if r is None:
-            QToolTip.hideText()
+        s = c = None
+        if r is not None:
+            k, x = r
+            c = self.case_a(k, x)
+            s = self.segment_a(k, x)
+        cle = (r[0], s) if s is not None else None
+        if cle == self._survole:
             return
-        k, x = r
-        s = self.segment_a(k, x)
+        self._survole = cle
         if s is None:
-            QToolTip.hideText()
             return
         a, b, e = s
-        QToolTip.showText(QCursor.pos(), f'{self.lignes[k][0]} · {L.LIBELLES_ETATS[e]}\n'
-                                         f'du {L.heure_locale(int(a))} au {L.heure_locale(int(b))} '
-                                         f'({L.duree_texte(b - a)})', self)
+        rect = self.rect_survol(k, min(a, c[0]), max(b, c[1]))
+        texte = (f'{self.lignes[k][0]} · {L.LIBELLES_ETATS[e]}\n'
+                 f'du {L.heure_locale(int(a))} au {L.heure_locale(int(b))} ({L.duree_texte(b - a)})')
+        QToolTip.showText(self.mapToGlobal(self.mapFromScene(pos)), texte, self, rect)
+
+    def leaveEvent(self, e):
+        self._survole = None
+        super().leaveEvent(e)
 
     def _clic(self, ev):
         if not ev.double():
@@ -180,7 +207,8 @@ class Carte(QFrame):
     def __init__(self, titre):
         super().__init__()
         self.setFrameShape(QFrame.StyledPanel)
-        self.setStyleSheet('Carte { background: #F7F9FB; border: 1px solid #D6DCE2; border-radius: 4px; }')
+        self.setStyleSheet('Carte { background: #F7F9FB; border: 1px solid #D6DCE2; border-radius: 4px; }'
+                           f'Carte QLabel {{ color: {TEXTE_SUR_FOND}; background: transparent; }}')
         v = QVBoxLayout(self)
         v.setContentsMargins(10, 6, 10, 6)
         v.setSpacing(0)

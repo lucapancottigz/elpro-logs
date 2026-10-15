@@ -13,10 +13,12 @@ sys.path.insert(0, os.path.join(RACINE, 'engine'))
 sys.path.insert(0, os.path.join(RACINE, 'tools'))
 
 from PySide6.QtCore import QSettings, QCoreApplication, Qt  # noqa: E402
-from PySide6.QtWidgets import QApplication, QMessageBox, QFileDialog, QInputDialog  # noqa: E402
+from PySide6.QtWidgets import QApplication, QMessageBox, QFileDialog, QInputDialog, QToolTip  # noqa: E402
+from PySide6.QtGui import QColor  # noqa: E402
 
 import elpro_logs as L  # noqa: E402
 import make_demo_logs as G  # noqa: E402
+import pyqtgraph as pg  # noqa: E402
 from ui import dialogs  # noqa: E402
 from ui.main_window import MainWindow  # noqa: E402
 from ui.workers import attendre_tous  # noqa: E402
@@ -151,6 +153,22 @@ def main():
     k = [n for n, _s, _a in vg.frise.lignes].index('B-SM2')
     s = vg.frise.segment_a(k, locale('01.10.2026 13:00:00'))
     verifier(s and s[2] == 'COMM_PERDUE', 'survol de la frise : segment de perte de comm')
+    bulles = []
+    montrer = QToolTip.showText
+    QToolTip.showText = staticmethod(lambda pos, texte, w=None, rect=None, *a: bulles.append((texte, rect)))
+    QToolTip.hideText = staticmethod(lambda: bulles.append(('masquée', None)))
+    vb = vg.frise.vue
+
+    def survoler(texte_heure, ligne):
+        vg.frise._survol(vb.mapViewToScene(pg.Point(locale(texte_heure), ligne)))
+    survoler('01.10.2026 12:30:00', k)
+    survoler('01.10.2026 13:00:00', k)
+    survoler('01.10.2026 13:30:00', k)
+    verifier(len(bulles) == 1 and 'Communication perdue' in bulles[0][0] and bulles[0][1] is not None
+             and bulles[0][1].width() > 5, 'bulle de la frise : une seule mise à jour dans le même segment, avec rectangle')
+    survoler('01.10.2026 16:00:00', k)
+    verifier(len(bulles) == 2 and 'OK' in bulles[1][0], 'bulle de la frise : mise à jour sur un autre segment, jamais masquée')
+    QToolTip.showText = montrer
     sm2, sm3, base = vg.ligne_tableau('B-SM2'), vg.ligne_tableau('B-SM3'), vg.ligne_tableau('B-BASE')
     verifier((sm2['Dispo comm'], sm2['Pertes comm'], sm2['Durée pertes']) == ('97,14 %', '1', '2 h 03 min'),
              f"G7 B-SM2 {sm2['Dispo comm']} · {sm2['Pertes comm']} · {sm2['Durée pertes']}")
@@ -158,6 +176,10 @@ def main():
              f"G8 B-SM3 {sm3['Batterie min']} · {sm3['Batterie basse']} · {sm3['Radar max']}")
     verifier(base['Coupures secteur'] == '1 (30 min 00 s)' and base['Dispo comm'] == '',
              f"G9 B-BASE coupures {base['Coupures secteur']}, dispo comm vide")
+    cel = [vg.table.item(r, c) for r in range(vg.table.rowCount()) for c in range(vg.table.columnCount())]
+    fonds = [it for it in cel if it and it.background().style() != Qt.NoBrush]
+    verifier(fonds and all(it.foreground().color() == QColor('#202020') for it in fonds),
+             'synthèse : texte foncé sur les cellules à fond coloré')
     tout = tab.periode
     tab.periode_derniere(7 * 86400)
     verifier(tab.periode == (tout[1] - 7 * 86400, tout[1]), 'période « 7 jours » depuis la fin des données')
@@ -238,6 +260,9 @@ def main():
     jr.f_familles.cocher(['SECTEUR'])
     attendre(lambda: len(jr.lignes()) == 2)
     verifier([x[2] for x in jr.lignes()] == ['Coupure secteur', 'Secteur rétabli'], 'J3 filtre B-BASE + Secteur')
+    fg = jr.modele.data(jr.modele.index(0, 2), Qt.ForegroundRole)
+    bg = jr.modele.data(jr.modele.index(0, 2), Qt.BackgroundRole)
+    verifier(bg is not None and fg == QColor('#202020'), 'journal : texte foncé sur fond coloré')
     jr.f_stations.cocher([n for n in jr.f_stations.actions_])
     jr.f_familles.cocher([n for n in jr.f_familles.actions_])
     attendre(lambda: len(jr.lignes()) == 12)

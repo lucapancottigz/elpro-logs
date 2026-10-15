@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushB
                                QMenu, QHeaderView, QFileDialog, QMessageBox)
 
 import elpro_logs as L
-from ui.common import COULEURS_GRAVITE, LIBELLES_GRAVITE, duree
+from ui.common import COULEURS_GRAVITE, LIBELLES_GRAVITE, TEXTE_SUR_FOND, duree
 
 COLONNES = ['Date et heure', 'Station', 'Événement', 'Durée']
 FAMILLE_DONNEES = ('DONNEES', 'Données (trous)')
@@ -48,6 +48,8 @@ class ModeleJournal(QAbstractTableModel):
         if role == Qt.BackgroundRole:
             c = COULEURS_GRAVITE.get(e.get('gravite'))
             return QColor(c) if c else None
+        if role == Qt.ForegroundRole:                # fond imposé : texte foncé (thème sombre)
+            return QColor(TEXTE_SUR_FOND) if COULEURS_GRAVITE.get(e.get('gravite')) else None
         if role == Qt.TextAlignmentRole and i.column() == 3:
             return int(Qt.AlignRight | Qt.AlignVCenter)
         return None

@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushB
 from PySide6.QtCore import Qt
 
 import elpro_logs as L
-from ui.common import cellule, preparer_tableau, GRIS
+from ui.common import cellule, preparer_tableau, FOND_GRISE
 
 
 def _titre(texte):
@@ -73,7 +73,7 @@ class FilesView(QWidget):
             k = self.logs.rowCount()
             self.logs.insertRow(k)
             partiel = fi['nb_lignes_gardees'] < fi['nb_lignes']        # lignes déjà présentes
-            style = {'couleur': GRIS, 'italique': True} if partiel else {}
+            style = {'fond': FOND_GRISE, 'italique': True} if partiel else {}
             for j, (v, droite) in enumerate(((fi['nom'], False), (fi['serie'] or '', False),
                                              (L.heure_locale(fi['t_debut']), False),
                                              (L.heure_locale(fi['t_fin']), False), (fi['nb_lignes'], True),
