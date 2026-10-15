@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-16"?>
+<CConfig SWV="2.1.0.72" FV="1.0" Date="{{DATE}}" Brand="Elpro Meshing Configuration Utility">
+	<DB><Details><SystemAddress>0</SystemAddress><Name>{{NOM_PROJET}}</Name></Details><Units><IDNumb>{{IDNUMB}}</IDNumb><DefRadIPNetAddr>192.168.50.0</DefRadIPNetAddr><DefRadIPNetMask>255.255.255.0</DefRadIPNetMask>
+			{{UNITES}}
+		</Units><SystemNetworks><NetworkList/></SystemNetworks><Note></Note><ProjectUpgradeHist></ProjectUpgradeHist><CountryCodeDefault></CountryCodeDefault></DB>
+  </CConfig>

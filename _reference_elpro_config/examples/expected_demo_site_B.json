@@ -1,0 +1,1937 @@
+{
+ "T": 572,
+ "registres": [
+  {
+   "adresse": 401,
+   "nom": "B-BASE_F1_ROUGE",
+   "type": "Commande feu rouge",
+   "station": "B-BASE",
+   "description": "DO5"
+  },
+  {
+   "adresse": 402,
+   "nom": "B-F2_F2_ROUGE",
+   "type": "Commande feu rouge",
+   "station": "B-F2",
+   "description": "DO1"
+  },
+  {
+   "adresse": 403,
+   "nom": "B-F3_F3_ROUGE",
+   "type": "Commande feu rouge",
+   "station": "B-F3",
+   "description": "DO1"
+  },
+  {
+   "adresse": 411,
+   "nom": "B-BASE_F1_OR_CLI",
+   "type": "Commande feu orange clignotant",
+   "station": "B-BASE",
+   "description": "DO6"
+  },
+  {
+   "adresse": 412,
+   "nom": "B-F2_F2_OR_CLI",
+   "type": "Commande feu orange clignotant",
+   "station": "B-F2",
+   "description": "DO2"
+  },
+  {
+   "adresse": 413,
+   "nom": "B-F3_F3_OR_CLI",
+   "type": "Commande feu orange clignotant",
+   "station": "B-F3",
+   "description": "DO2"
+  },
+  {
+   "adresse": 423,
+   "nom": "B-F3_F3_OR_FIXE",
+   "type": "Commande feu orange fixe",
+   "station": "B-F3",
+   "description": "DO3"
+  },
+  {
+   "adresse": 431,
+   "nom": "B-BASE_SIRENE",
+   "type": "Commande signalisation",
+   "station": "B-BASE",
+   "description": "DO7"
+  },
+  {
+   "adresse": 432,
+   "nom": "B-F2_SIRENE",
+   "type": "Commande signalisation",
+   "station": "B-F2",
+   "description": "DO3"
+  },
+  {
+   "adresse": 433,
+   "nom": "CAMON_SPOTON",
+   "type": "Commande signalisation",
+   "station": "B-CAM01",
+   "description": "DO1+DO2"
+  },
+  {
+   "adresse": 434,
+   "nom": "B-SIR3_DO1",
+   "type": "Commande signalisation",
+   "station": "B-SIR3",
+   "description": "DO1"
+  },
+  {
+   "adresse": 435,
+   "nom": "SIRENE_FLASH",
+   "type": "Commande signalisation",
+   "station": "B-SIR3",
+   "description": "DO2"
+  },
+  {
+   "adresse": 436,
+   "nom": "B-SIR4_SIRENE",
+   "type": "Commande signalisation",
+   "station": "B-SIR4",
+   "description": "DO1"
+  },
+  {
+   "adresse": 437,
+   "nom": "B-SIR4_FLASH",
+   "type": "Commande signalisation",
+   "station": "B-SIR4",
+   "description": "DO2"
+  },
+  {
+   "adresse": 443,
+   "nom": "B-F3_F3_VERT",
+   "type": "Commande feu vert",
+   "station": "B-F3",
+   "description": "DO4"
+  },
+  {
+   "adresse": 10501,
+   "nom": "B-BASE_MAINV",
+   "type": "Secteur présent",
+   "station": "B-BASE",
+   "description": "DI8"
+  },
+  {
+   "adresse": 15001,
+   "nom": "B-BASE_BT_ALARME",
+   "type": "Détection",
+   "station": "B-BASE",
+   "description": "DI1"
+  },
+  {
+   "adresse": 15002,
+   "nom": "B-SM1_CABLE",
+   "type": "Détection",
+   "station": "B-SM1",
+   "description": "DI1"
+  },
+  {
+   "adresse": 15003,
+   "nom": "B-SM1_LIDAR_1",
+   "type": "Détection",
+   "station": "B-SM1",
+   "description": "DI2"
+  },
+  {
+   "adresse": 15004,
+   "nom": "B-SM1_LIDAR_2",
+   "type": "Détection",
+   "station": "B-SM1",
+   "description": "DI3"
+  },
+  {
+   "adresse": 15005,
+   "nom": "B-SM1_LIDAR_3",
+   "type": "Détection",
+   "station": "B-SM1",
+   "description": "DI4"
+  },
+  {
+   "adresse": 15006,
+   "nom": "B-SM1_LIDAR_4",
+   "type": "Détection",
+   "station": "B-SM1",
+   "description": "DI5"
+  },
+  {
+   "adresse": 15007,
+   "nom": "B-SM1_LIDAR_5",
+   "type": "Détection",
+   "station": "B-SM1",
+   "description": "DI6"
+  },
+  {
+   "adresse": 15008,
+   "nom": "B-SM1_LIDAR_6",
+   "type": "Détection",
+   "station": "B-SM1",
+   "description": "DI7"
+  },
+  {
+   "adresse": 15009,
+   "nom": "B-SM2_LIDAR_1",
+   "type": "Détection",
+   "station": "B-SM2",
+   "description": "DI1"
+  },
+  {
+   "adresse": 15010,
+   "nom": "B-SM2_LIDAR_2",
+   "type": "Détection",
+   "station": "B-SM2",
+   "description": "DI2"
+  },
+  {
+   "adresse": 15011,
+   "nom": "B-SM2_LIDAR_3",
+   "type": "Détection",
+   "station": "B-SM2",
+   "description": "DI3"
+  },
+  {
+   "adresse": 15012,
+   "nom": "B-SM2_LIDAR_4",
+   "type": "Détection",
+   "station": "B-SM2",
+   "description": "DI4"
+  },
+  {
+   "adresse": 15013,
+   "nom": "B-SM2_LIDAR_5",
+   "type": "Détection",
+   "station": "B-SM2",
+   "description": "DI5"
+  },
+  {
+   "adresse": 15014,
+   "nom": "B-SM2_LIDAR_6",
+   "type": "Détection",
+   "station": "B-SM2",
+   "description": "DI6"
+  },
+  {
+   "adresse": 15015,
+   "nom": "B-CAM01_CABLE",
+   "type": "Détection",
+   "station": "B-CAM01",
+   "description": "DI3"
+  },
+  {
+   "adresse": 15016,
+   "nom": "B-SM3_LIDAR_1",
+   "type": "Détection",
+   "station": "B-SM3",
+   "description": "DI1"
+  },
+  {
+   "adresse": 15017,
+   "nom": "B-SM3_LIDAR_2",
+   "type": "Détection",
+   "station": "B-SM3",
+   "description": "DI2"
+  },
+  {
+   "adresse": 15018,
+   "nom": "B-SM3_LIDAR_3",
+   "type": "Détection",
+   "station": "B-SM3",
+   "description": "DI3"
+  },
+  {
+   "adresse": 15019,
+   "nom": "B-SM3_LIDAR_4",
+   "type": "Détection",
+   "station": "B-SM3",
+   "description": "DI4"
+  },
+  {
+   "adresse": 15020,
+   "nom": "B-SM3_LIDAR_5",
+   "type": "Détection",
+   "station": "B-SM3",
+   "description": "DI5"
+  },
+  {
+   "adresse": 15021,
+   "nom": "B-SM3_LIDAR_6",
+   "type": "Détection",
+   "station": "B-SM3",
+   "description": "DI6"
+  },
+  {
+   "adresse": 15102,
+   "nom": "B-SM1_COMFLAG",
+   "type": "Comflag (1 = perte comm)",
+   "station": "B-SM1",
+   "description": "calculé par IO Plus"
+  },
+  {
+   "adresse": 15103,
+   "nom": "B-SM2_COMFLAG",
+   "type": "Comflag (1 = perte comm)",
+   "station": "B-SM2",
+   "description": "calculé par IO Plus"
+  },
+  {
+   "adresse": 15104,
+   "nom": "B-F2_COMFLAG",
+   "type": "Comflag (1 = perte comm)",
+   "station": "B-F2",
+   "description": "calculé par IO Plus"
+  },
+  {
+   "adresse": 15105,
+   "nom": "B-F3_COMFLAG",
+   "type": "Comflag (1 = perte comm)",
+   "station": "B-F3",
+   "description": "calculé par IO Plus"
+  },
+  {
+   "adresse": 15106,
+   "nom": "B-CAM01_COMFLAG",
+   "type": "Comflag (1 = perte comm)",
+   "station": "B-CAM01",
+   "description": "calculé par IO Plus"
+  },
+  {
+   "adresse": 15107,
+   "nom": "B-SIR3_COMFLAG",
+   "type": "Comflag (1 = perte comm)",
+   "station": "B-SIR3",
+   "description": "calculé par IO Plus"
+  },
+  {
+   "adresse": 15108,
+   "nom": "B-SIR4_COMFLAG",
+   "type": "Comflag (1 = perte comm)",
+   "station": "B-SIR4",
+   "description": "calculé par IO Plus"
+  },
+  {
+   "adresse": 15109,
+   "nom": "B-SM3_COMFLAG",
+   "type": "Comflag (1 = perte comm)",
+   "station": "B-SM3",
+   "description": "calculé par IO Plus"
+  },
+  {
+   "adresse": 30501,
+   "nom": "B-BASE_BATTV",
+   "type": "Tension batterie",
+   "station": "B-BASE",
+   "description": "8192 = 0 V, 49152 = 40 V"
+  },
+  {
+   "adresse": 30502,
+   "nom": "B-SM1_BATTV",
+   "type": "Tension batterie",
+   "station": "B-SM1",
+   "description": "8192 = 0 V, 49152 = 40 V"
+  },
+  {
+   "adresse": 30503,
+   "nom": "B-SM2_BATTV",
+   "type": "Tension batterie",
+   "station": "B-SM2",
+   "description": "8192 = 0 V, 49152 = 40 V"
+  },
+  {
+   "adresse": 30504,
+   "nom": "B-F2_BATTV",
+   "type": "Tension batterie",
+   "station": "B-F2",
+   "description": "8192 = 0 V, 49152 = 40 V"
+  },
+  {
+   "adresse": 30505,
+   "nom": "B-F3_BATTV",
+   "type": "Tension batterie",
+   "station": "B-F3",
+   "description": "8192 = 0 V, 49152 = 40 V"
+  },
+  {
+   "adresse": 30506,
+   "nom": "B-CAM01_BATTV",
+   "type": "Tension batterie",
+   "station": "B-CAM01",
+   "description": "8192 = 0 V, 49152 = 40 V"
+  },
+  {
+   "adresse": 30507,
+   "nom": "B-SIR3_BATTV",
+   "type": "Tension batterie",
+   "station": "B-SIR3",
+   "description": "8192 = 0 V, 49152 = 40 V"
+  },
+  {
+   "adresse": 30508,
+   "nom": "B-SIR4_BATTV",
+   "type": "Tension batterie",
+   "station": "B-SIR4",
+   "description": "8192 = 0 V, 49152 = 40 V"
+  },
+  {
+   "adresse": 30509,
+   "nom": "B-SM3_BATTV",
+   "type": "Tension batterie",
+   "station": "B-SM3",
+   "description": "8192 = 0 V, 49152 = 40 V"
+  },
+  {
+   "adresse": 35101,
+   "nom": "B-BASE_RSSI",
+   "type": "RSSI",
+   "station": "B-BASE",
+   "description": "dBm (valeur négative)"
+  },
+  {
+   "adresse": 35102,
+   "nom": "B-SM1_RSSI",
+   "type": "RSSI",
+   "station": "B-SM1",
+   "description": "dBm (valeur négative)"
+  },
+  {
+   "adresse": 35103,
+   "nom": "B-SM2_RSSI",
+   "type": "RSSI",
+   "station": "B-SM2",
+   "description": "dBm (valeur négative)"
+  },
+  {
+   "adresse": 35104,
+   "nom": "B-F2_RSSI",
+   "type": "RSSI",
+   "station": "B-F2",
+   "description": "dBm (valeur négative)"
+  },
+  {
+   "adresse": 35105,
+   "nom": "B-F3_RSSI",
+   "type": "RSSI",
+   "station": "B-F3",
+   "description": "dBm (valeur négative)"
+  },
+  {
+   "adresse": 35106,
+   "nom": "B-CAM01_RSSI",
+   "type": "RSSI",
+   "station": "B-CAM01",
+   "description": "dBm (valeur négative)"
+  },
+  {
+   "adresse": 35107,
+   "nom": "B-SIR3_RSSI",
+   "type": "RSSI",
+   "station": "B-SIR3",
+   "description": "dBm (valeur négative)"
+  },
+  {
+   "adresse": 35108,
+   "nom": "B-SIR4_RSSI",
+   "type": "RSSI",
+   "station": "B-SIR4",
+   "description": "dBm (valeur négative)"
+  },
+  {
+   "adresse": 35109,
+   "nom": "B-SM3_RSSI",
+   "type": "RSSI",
+   "station": "B-SM3",
+   "description": "dBm (valeur négative)"
+  },
+  {
+   "adresse": 35201,
+   "nom": "B-SM3_RADAR1",
+   "type": "Radar (brut 4-20 mA)",
+   "station": "B-SM3",
+   "description": "AI1 : 16384 = 4 mA, 49152 = 20 mA"
+  }
+ ],
+ "stations": [
+  {
+   "nom": "B-BASE",
+   "uid": "UID1",
+   "xx": "01",
+   "role": "base",
+   "ip": "192.168.1.100",
+   "amont": "",
+   "puissance_dbm": 34,
+   "ack": [
+    4,
+    4000
+   ],
+   "reads": [
+    {
+     "nom": "B-SM1_ReadBATTV",
+     "local": 30502,
+     "distant": 30007,
+     "nb": 1,
+     "fail": 15202,
+     "inv": 0,
+     "dest": "UID2",
+     "periode": 572,
+     "offset": 0,
+     "timeout": 20
+    },
+    {
+     "nom": "B-SM1_ReadRSSI",
+     "local": 35102,
+     "distant": 30401,
+     "nb": 1,
+     "fail": 15302,
+     "inv": 0,
+     "dest": "UID2",
+     "periode": 572,
+     "offset": 22,
+     "timeout": 20
+    },
+    {
+     "nom": "B-SM2_ReadBATTV",
+     "local": 30503,
+     "distant": 30007,
+     "nb": 1,
+     "fail": 15203,
+     "inv": 0,
+     "dest": "UID3",
+     "periode": 572,
+     "offset": 44,
+     "timeout": 20
+    },
+    {
+     "nom": "B-SM2_ReadRSSI",
+     "local": 35103,
+     "distant": 30401,
+     "nb": 1,
+     "fail": 15303,
+     "inv": 0,
+     "dest": "UID3",
+     "periode": 572,
+     "offset": 66,
+     "timeout": 20
+    },
+    {
+     "nom": "B-F2_ReadBATTV",
+     "local": 30504,
+     "distant": 30007,
+     "nb": 1,
+     "fail": 15204,
+     "inv": 0,
+     "dest": "UID4",
+     "periode": 572,
+     "offset": 88,
+     "timeout": 20
+    },
+    {
+     "nom": "B-F2_ReadRSSI",
+     "local": 35104,
+     "distant": 30401,
+     "nb": 1,
+     "fail": 15304,
+     "inv": 0,
+     "dest": "UID4",
+     "periode": 572,
+     "offset": 110,
+     "timeout": 20
+    },
+    {
+     "nom": "B-F3_ReadBATTV",
+     "local": 30505,
+     "distant": 30007,
+     "nb": 1,
+     "fail": 15205,
+     "inv": 0,
+     "dest": "UID5",
+     "periode": 572,
+     "offset": 132,
+     "timeout": 20
+    },
+    {
+     "nom": "B-F3_ReadRSSI",
+     "local": 35105,
+     "distant": 30401,
+     "nb": 1,
+     "fail": 15305,
+     "inv": 0,
+     "dest": "UID5",
+     "periode": 572,
+     "offset": 154,
+     "timeout": 20
+    },
+    {
+     "nom": "B-CAM01_ReadBATTV",
+     "local": 30506,
+     "distant": 30007,
+     "nb": 1,
+     "fail": 15206,
+     "inv": 0,
+     "dest": "UID6",
+     "periode": 572,
+     "offset": 176,
+     "timeout": 20
+    },
+    {
+     "nom": "B-CAM01_ReadRSSI",
+     "local": 35106,
+     "distant": 30401,
+     "nb": 1,
+     "fail": 15306,
+     "inv": 0,
+     "dest": "UID6",
+     "periode": 572,
+     "offset": 198,
+     "timeout": 20
+    },
+    {
+     "nom": "B-SIR3_ReadBATTV",
+     "local": 30507,
+     "distant": 30007,
+     "nb": 1,
+     "fail": 15207,
+     "inv": 0,
+     "dest": "UID7",
+     "periode": 572,
+     "offset": 220,
+     "timeout": 20
+    },
+    {
+     "nom": "B-SIR3_ReadRSSI",
+     "local": 35107,
+     "distant": 30401,
+     "nb": 1,
+     "fail": 15307,
+     "inv": 0,
+     "dest": "UID7",
+     "periode": 572,
+     "offset": 242,
+     "timeout": 20
+    },
+    {
+     "nom": "B-SIR4_ReadBATTV",
+     "local": 30508,
+     "distant": 30007,
+     "nb": 1,
+     "fail": 15208,
+     "inv": 0,
+     "dest": "UID8",
+     "periode": 572,
+     "offset": 264,
+     "timeout": 20
+    },
+    {
+     "nom": "B-SIR4_ReadRSSI",
+     "local": 35108,
+     "distant": 30401,
+     "nb": 1,
+     "fail": 15308,
+     "inv": 0,
+     "dest": "UID8",
+     "periode": 572,
+     "offset": 286,
+     "timeout": 20
+    },
+    {
+     "nom": "B-SM3_ReadBATTV",
+     "local": 30509,
+     "distant": 30007,
+     "nb": 1,
+     "fail": 15209,
+     "inv": 0,
+     "dest": "UID9",
+     "periode": 572,
+     "offset": 308,
+     "timeout": 20
+    },
+    {
+     "nom": "B-SM3_ReadRSSI",
+     "local": 35109,
+     "distant": 30401,
+     "nb": 1,
+     "fail": 15309,
+     "inv": 0,
+     "dest": "UID9",
+     "periode": 572,
+     "offset": 330,
+     "timeout": 20
+    },
+    {
+     "nom": "B-SM1_ReadDET",
+     "local": 15002,
+     "distant": 10001,
+     "nb": 7,
+     "fail": 15402,
+     "inv": 0,
+     "dest": "UID2",
+     "periode": 572,
+     "offset": 352,
+     "timeout": 20
+    },
+    {
+     "nom": "B-SM2_ReadDET",
+     "local": 15009,
+     "distant": 10001,
+     "nb": 6,
+     "fail": 15403,
+     "inv": 0,
+     "dest": "UID3",
+     "periode": 572,
+     "offset": 374,
+     "timeout": 20
+    },
+    {
+     "nom": "B-CAM01_ReadDET",
+     "local": 15015,
+     "distant": 10003,
+     "nb": 1,
+     "fail": 15406,
+     "inv": 0,
+     "dest": "UID6",
+     "periode": 572,
+     "offset": 396,
+     "timeout": 20
+    },
+    {
+     "nom": "B-SM3_ReadDET",
+     "local": 15016,
+     "distant": 10001,
+     "nb": 6,
+     "fail": 15409,
+     "inv": 0,
+     "dest": "UID9",
+     "periode": 572,
+     "offset": 418,
+     "timeout": 20
+    },
+    {
+     "nom": "B-SM3_ReadRADAR",
+     "local": 35201,
+     "distant": 30001,
+     "nb": 1,
+     "fail": 15709,
+     "inv": 0,
+     "dest": "UID9",
+     "periode": 572,
+     "offset": 440,
+     "timeout": 20
+    }
+   ],
+   "scatters": [
+    {
+     "nom": "B-BASE-SGNL",
+     "dest": "local",
+     "periode": 0,
+     "offset": 0,
+     "fail": 15501,
+     "paires": [
+      [
+       401,
+       5
+      ],
+      [
+       411,
+       6
+      ],
+      [
+       431,
+       7
+      ]
+     ],
+     "inv": 0,
+     "ack": 1
+    },
+    {
+     "nom": "B-F2-SGNL",
+     "dest": "UID4",
+     "periode": 572,
+     "offset": 462,
+     "fail": 15504,
+     "paires": [
+      [
+       402,
+       1
+      ],
+      [
+       412,
+       2
+      ],
+      [
+       432,
+       3
+      ]
+     ],
+     "inv": 0,
+     "ack": 1
+    },
+    {
+     "nom": "B-F3-SGNL",
+     "dest": "UID5",
+     "periode": 572,
+     "offset": 484,
+     "fail": 15505,
+     "paires": [
+      [
+       403,
+       1
+      ],
+      [
+       413,
+       2
+      ],
+      [
+       423,
+       3
+      ],
+      [
+       443,
+       4
+      ]
+     ],
+     "inv": 0,
+     "ack": 1
+    },
+    {
+     "nom": "B-CAM01-SGNL",
+     "dest": "UID6",
+     "periode": 572,
+     "offset": 506,
+     "fail": 15506,
+     "paires": [
+      [
+       433,
+       1
+      ],
+      [
+       433,
+       2
+      ]
+     ],
+     "inv": 0,
+     "ack": 1
+    },
+    {
+     "nom": "B-SIR3-SGNL",
+     "dest": "UID7",
+     "periode": 572,
+     "offset": 528,
+     "fail": 15507,
+     "paires": [
+      [
+       434,
+       1
+      ],
+      [
+       435,
+       2
+      ]
+     ],
+     "inv": 0,
+     "ack": 1
+    },
+    {
+     "nom": "B-SIR4-SGNL",
+     "dest": "UID8",
+     "periode": 572,
+     "offset": 550,
+     "fail": 15508,
+     "paires": [
+      [
+       436,
+       1
+      ],
+      [
+       437,
+       2
+      ]
+     ],
+     "inv": 0,
+     "ack": 1
+    },
+    {
+     "nom": "B-BASE-ALM",
+     "dest": "local",
+     "periode": 0,
+     "offset": 0,
+     "fail": 0,
+     "paires": [
+      [
+       10001,
+       15001
+      ]
+     ],
+     "inv": 0,
+     "ack": 1
+    },
+    {
+     "nom": "B-BASE-DFTL",
+     "dest": "local",
+     "periode": 0,
+     "offset": 0,
+     "fail": 0,
+     "paires": [
+      [
+       10008,
+       10501
+      ],
+      [
+       30007,
+       30501
+      ],
+      [
+       30401,
+       35101
+      ]
+     ],
+     "inv": 0,
+     "ack": 1
+    }
+   ],
+   "writes": [],
+   "failsafe": [
+    [
+     401,
+     50
+    ],
+    [
+     15101,
+     17
+    ],
+    [
+     15201,
+     17
+    ],
+    [
+     15301,
+     17
+    ],
+    [
+     15401,
+     17
+    ],
+    [
+     15501,
+     17
+    ],
+    [
+     15601,
+     17
+    ],
+    [
+     15701,
+     17
+    ]
+   ],
+   "iop": [
+    [
+     1,
+     0,
+     0,
+     0,
+     15202,
+     "B-SM1 BATTV_FAIL"
+    ],
+    [
+     8,
+     0,
+     0,
+     0,
+     15302,
+     "+ B-SM1 RSSI_FAIL"
+    ],
+    [
+     8,
+     0,
+     0,
+     0,
+     15402,
+     "+ B-SM1 DET_FAIL"
+    ],
+    [
+     13,
+     1,
+     0,
+     0,
+     3,
+     "Toutes les lectures en echec"
+    ],
+    [
+     2,
+     0,
+     0,
+     0,
+     15102,
+     "B-SM1 COMFLAG"
+    ],
+    [
+     1,
+     0,
+     0,
+     0,
+     15203,
+     "B-SM2 BATTV_FAIL"
+    ],
+    [
+     8,
+     0,
+     0,
+     0,
+     15303,
+     "+ B-SM2 RSSI_FAIL"
+    ],
+    [
+     8,
+     0,
+     0,
+     0,
+     15403,
+     "+ B-SM2 DET_FAIL"
+    ],
+    [
+     13,
+     1,
+     0,
+     0,
+     3,
+     "Toutes les lectures en echec"
+    ],
+    [
+     2,
+     0,
+     0,
+     0,
+     15103,
+     "B-SM2 COMFLAG"
+    ],
+    [
+     1,
+     0,
+     0,
+     0,
+     15204,
+     "B-F2 BATTV_FAIL"
+    ],
+    [
+     8,
+     0,
+     0,
+     0,
+     15304,
+     "+ B-F2 RSSI_FAIL"
+    ],
+    [
+     13,
+     1,
+     0,
+     0,
+     2,
+     "Toutes les lectures en echec"
+    ],
+    [
+     6,
+     0,
+     0,
+     0,
+     15504,
+     "OU B-F2 SGNL_FAIL"
+    ],
+    [
+     2,
+     0,
+     0,
+     0,
+     15104,
+     "B-F2 COMFLAG"
+    ],
+    [
+     1,
+     0,
+     0,
+     0,
+     15205,
+     "B-F3 BATTV_FAIL"
+    ],
+    [
+     8,
+     0,
+     0,
+     0,
+     15305,
+     "+ B-F3 RSSI_FAIL"
+    ],
+    [
+     13,
+     1,
+     0,
+     0,
+     2,
+     "Toutes les lectures en echec"
+    ],
+    [
+     6,
+     0,
+     0,
+     0,
+     15505,
+     "OU B-F3 SGNL_FAIL"
+    ],
+    [
+     2,
+     0,
+     0,
+     0,
+     15105,
+     "B-F3 COMFLAG"
+    ],
+    [
+     1,
+     0,
+     0,
+     0,
+     15206,
+     "B-CAM01 BATTV_FAIL"
+    ],
+    [
+     8,
+     0,
+     0,
+     0,
+     15306,
+     "+ B-CAM01 RSSI_FAIL"
+    ],
+    [
+     8,
+     0,
+     0,
+     0,
+     15406,
+     "+ B-CAM01 DET_FAIL"
+    ],
+    [
+     13,
+     1,
+     0,
+     0,
+     3,
+     "Toutes les lectures en echec"
+    ],
+    [
+     6,
+     0,
+     0,
+     0,
+     15506,
+     "OU B-CAM01 SGNL_FAIL"
+    ],
+    [
+     2,
+     0,
+     0,
+     0,
+     15106,
+     "B-CAM01 COMFLAG"
+    ],
+    [
+     1,
+     0,
+     0,
+     0,
+     15207,
+     "B-SIR3 BATTV_FAIL"
+    ],
+    [
+     8,
+     0,
+     0,
+     0,
+     15307,
+     "+ B-SIR3 RSSI_FAIL"
+    ],
+    [
+     13,
+     1,
+     0,
+     0,
+     2,
+     "Toutes les lectures en echec"
+    ],
+    [
+     6,
+     0,
+     0,
+     0,
+     15507,
+     "OU B-SIR3 SGNL_FAIL"
+    ],
+    [
+     2,
+     0,
+     0,
+     0,
+     15107,
+     "B-SIR3 COMFLAG"
+    ],
+    [
+     1,
+     0,
+     0,
+     0,
+     15208,
+     "B-SIR4 BATTV_FAIL"
+    ],
+    [
+     8,
+     0,
+     0,
+     0,
+     15308,
+     "+ B-SIR4 RSSI_FAIL"
+    ],
+    [
+     13,
+     1,
+     0,
+     0,
+     2,
+     "Toutes les lectures en echec"
+    ],
+    [
+     6,
+     0,
+     0,
+     0,
+     15508,
+     "OU B-SIR4 SGNL_FAIL"
+    ],
+    [
+     2,
+     0,
+     0,
+     0,
+     15108,
+     "B-SIR4 COMFLAG"
+    ],
+    [
+     1,
+     0,
+     0,
+     0,
+     15209,
+     "B-SM3 BATTV_FAIL"
+    ],
+    [
+     8,
+     0,
+     0,
+     0,
+     15309,
+     "+ B-SM3 RSSI_FAIL"
+    ],
+    [
+     8,
+     0,
+     0,
+     0,
+     15409,
+     "+ B-SM3 DET_FAIL"
+    ],
+    [
+     8,
+     0,
+     0,
+     0,
+     15709,
+     "+ B-SM3 RADAR_FAIL"
+    ],
+    [
+     13,
+     1,
+     0,
+     0,
+     4,
+     "Toutes les lectures en echec"
+    ],
+    [
+     2,
+     0,
+     0,
+     0,
+     15109,
+     "B-SM3 COMFLAG"
+    ]
+   ],
+   "noms_io": {
+    "Din8": "MAINV",
+    "Din1": "BT_ALARME",
+    "Dot5": "F1_ROUGE",
+    "Dot6": "F1_OR_CLI",
+    "Dot7": "SIRENE"
+   },
+   "nb_tags": 49,
+   "groupes": [
+    [
+     "Alarmes",
+     21
+    ],
+    [
+     "Radars",
+     1
+    ],
+    [
+     "Signalisations",
+     9
+    ],
+    [
+     "Status - MAINV",
+     1
+    ],
+    [
+     "Status - BATTV",
+     9
+    ],
+    [
+     "Status - FLAGC",
+     8
+    ]
+   ]
+  },
+  {
+   "nom": "B-SM1",
+   "uid": "UID2",
+   "xx": "02",
+   "role": "remote",
+   "ip": "192.168.1.101",
+   "amont": "B-BASE",
+   "puissance_dbm": 34,
+   "ack": [
+    4,
+    4000
+   ],
+   "reads": [],
+   "scatters": [],
+   "writes": [
+    {
+     "nom": "DET",
+     "dest": "UID1",
+     "local": 10001,
+     "distant": 15002,
+     "nb": 7,
+     "inv": 0,
+     "cos": 1,
+     "force": 0,
+     "ack": 1
+    }
+   ],
+   "failsafe": [],
+   "iop": null,
+   "noms_io": {
+    "Din1": "CABLE",
+    "Din2": "LIDAR_1",
+    "Din3": "LIDAR_2",
+    "Din4": "LIDAR_3",
+    "Din5": "LIDAR_4",
+    "Din6": "LIDAR_5",
+    "Din7": "LIDAR_6"
+   },
+   "nb_tags": 9,
+   "groupes": [
+    [
+     "Alarmes",
+     7
+    ],
+    [
+     "Statut",
+     2
+    ]
+   ]
+  },
+  {
+   "nom": "B-SM2",
+   "uid": "UID3",
+   "xx": "03",
+   "role": "remote",
+   "ip": "192.168.1.102",
+   "amont": "B-BASE",
+   "puissance_dbm": 34,
+   "ack": [
+    4,
+    4000
+   ],
+   "reads": [],
+   "scatters": [],
+   "writes": [
+    {
+     "nom": "DET",
+     "dest": "UID1",
+     "local": 10001,
+     "distant": 15009,
+     "nb": 6,
+     "inv": 0,
+     "cos": 1,
+     "force": 0,
+     "ack": 1
+    }
+   ],
+   "failsafe": [],
+   "iop": null,
+   "noms_io": {
+    "Din1": "LIDAR_1",
+    "Din2": "LIDAR_2",
+    "Din3": "LIDAR_3",
+    "Din4": "LIDAR_4",
+    "Din5": "LIDAR_5",
+    "Din6": "LIDAR_6"
+   },
+   "nb_tags": 8,
+   "groupes": [
+    [
+     "Alarmes",
+     6
+    ],
+    [
+     "Statut",
+     2
+    ]
+   ]
+  },
+  {
+   "nom": "B-F2",
+   "uid": "UID4",
+   "xx": "04",
+   "role": "remote",
+   "ip": "192.168.1.103",
+   "amont": "B-BASE",
+   "puissance_dbm": 34,
+   "ack": [
+    3,
+    2000
+   ],
+   "reads": [],
+   "scatters": [],
+   "writes": [],
+   "failsafe": [],
+   "iop": null,
+   "noms_io": {
+    "Dot1": "F2_ROUGE",
+    "Dot2": "F2_OR_CLI",
+    "Dot3": "SIRENE"
+   },
+   "nb_tags": 5,
+   "groupes": [
+    [
+     "Signalisation",
+     3
+    ],
+    [
+     "Statut",
+     2
+    ]
+   ]
+  },
+  {
+   "nom": "B-F3",
+   "uid": "UID5",
+   "xx": "05",
+   "role": "remote",
+   "ip": "192.168.1.104",
+   "amont": "B-BASE",
+   "puissance_dbm": 34,
+   "ack": [
+    3,
+    2000
+   ],
+   "reads": [],
+   "scatters": [],
+   "writes": [],
+   "failsafe": [],
+   "iop": null,
+   "noms_io": {
+    "Dot1": "F3_ROUGE",
+    "Dot2": "F3_OR_CLI",
+    "Dot3": "F3_OR_FIXE",
+    "Dot4": "F3_VERT"
+   },
+   "nb_tags": 6,
+   "groupes": [
+    [
+     "Signalisation",
+     4
+    ],
+    [
+     "Statut",
+     2
+    ]
+   ]
+  },
+  {
+   "nom": "B-CAM01",
+   "uid": "UID6",
+   "xx": "06",
+   "role": "remote",
+   "ip": "192.168.1.105",
+   "amont": "B-BASE",
+   "puissance_dbm": 34,
+   "ack": [
+    4,
+    4000
+   ],
+   "reads": [],
+   "scatters": [],
+   "writes": [
+    {
+     "nom": "DET",
+     "dest": "UID1",
+     "local": 10003,
+     "distant": 15015,
+     "nb": 1,
+     "inv": 0,
+     "cos": 1,
+     "force": 0,
+     "ack": 1
+    }
+   ],
+   "failsafe": [],
+   "iop": null,
+   "noms_io": {
+    "Din3": "CABLE",
+    "Dot1": "CAMON_SPOTON",
+    "Dot2": "CAMON_SPOTON"
+   },
+   "nb_tags": 5,
+   "groupes": [
+    [
+     "Alarmes",
+     1
+    ],
+    [
+     "Signalisation",
+     2
+    ],
+    [
+     "Statut",
+     2
+    ]
+   ]
+  },
+  {
+   "nom": "B-SIR3",
+   "uid": "UID7",
+   "xx": "07",
+   "role": "remote",
+   "ip": "192.168.1.106",
+   "amont": "B-BASE",
+   "puissance_dbm": 34,
+   "ack": [
+    3,
+    2000
+   ],
+   "reads": [],
+   "scatters": [],
+   "writes": [],
+   "failsafe": [],
+   "iop": null,
+   "noms_io": {
+    "Dot1": "DO1",
+    "Dot2": "SIRENE_FLASH"
+   },
+   "nb_tags": 4,
+   "groupes": [
+    [
+     "Signalisation",
+     2
+    ],
+    [
+     "Statut",
+     2
+    ]
+   ]
+  },
+  {
+   "nom": "B-SIR4",
+   "uid": "UID8",
+   "xx": "08",
+   "role": "remote",
+   "ip": "192.168.1.107",
+   "amont": "B-BASE",
+   "puissance_dbm": 34,
+   "ack": [
+    3,
+    2000
+   ],
+   "reads": [],
+   "scatters": [],
+   "writes": [],
+   "failsafe": [],
+   "iop": null,
+   "noms_io": {
+    "Dot1": "SIRENE",
+    "Dot2": "FLASH"
+   },
+   "nb_tags": 4,
+   "groupes": [
+    [
+     "Signalisation",
+     2
+    ],
+    [
+     "Statut",
+     2
+    ]
+   ]
+  },
+  {
+   "nom": "B-SM3",
+   "uid": "UID9",
+   "xx": "09",
+   "role": "remote",
+   "ip": "192.168.1.108",
+   "amont": "B-BASE",
+   "puissance_dbm": 34,
+   "ack": [
+    4,
+    4000
+   ],
+   "reads": [],
+   "scatters": [],
+   "writes": [
+    {
+     "nom": "DET",
+     "dest": "UID1",
+     "local": 10001,
+     "distant": 15016,
+     "nb": 6,
+     "inv": 0,
+     "cos": 1,
+     "force": 0,
+     "ack": 1
+    },
+    {
+     "nom": "RADAR1",
+     "dest": "UID1",
+     "local": 30001,
+     "distant": 35201,
+     "nb": 1,
+     "inv": 0,
+     "cos": 0,
+     "force": 501,
+     "ack": 1
+    }
+   ],
+   "failsafe": [],
+   "iop": [
+    [
+     1,
+     0,
+     0,
+     0,
+     40514,
+     "RADAR1 tempo"
+    ],
+    [
+     19,
+     1,
+     1,
+     0,
+     4,
+     "tempo nulle = evaluation"
+    ],
+    [
+     9,
+     1,
+     0,
+     0,
+     1,
+     ""
+    ],
+    [
+     2,
+     0,
+     0,
+     0,
+     40514,
+     ""
+    ],
+    [
+     18,
+     1,
+     0,
+     0,
+     32,
+     "tempo en cours = fin"
+    ],
+    [
+     1,
+     0,
+     0,
+     0,
+     40512,
+     "etat precedent"
+    ],
+    [
+     2,
+     0,
+     0,
+     0,
+     40515,
+     ""
+    ],
+    [
+     1,
+     0,
+     0,
+     0,
+     30001,
+     "RADAR1 valeur"
+    ],
+    [
+     13,
+     1,
+     0,
+     0,
+     32768,
+     "seuil haut"
+    ],
+    [
+     3,
+     0,
+     0,
+     0,
+     40515,
+     ""
+    ],
+    [
+     1,
+     0,
+     0,
+     0,
+     30001,
+     ""
+    ],
+    [
+     16,
+     1,
+     0,
+     0,
+     31130,
+     "seuil bas"
+    ],
+    [
+     4,
+     0,
+     0,
+     0,
+     40515,
+     ""
+    ],
+    [
+     1,
+     0,
+     0,
+     0,
+     40515,
+     ""
+    ],
+    [
+     15,
+     0,
+     0,
+     0,
+     40512,
+     "changement etat"
+    ],
+    [
+     2,
+     0,
+     0,
+     0,
+     40516,
+     ""
+    ],
+    [
+     1,
+     0,
+     0,
+     0,
+     30001,
+     "ecart avec valeur envoyee"
+    ],
+    [
+     13,
+     0,
+     0,
+     0,
+     40511,
+     ""
+    ],
+    [
+     19,
+     1,
+     0,
+     0,
+     4,
+     ""
+    ],
+    [
+     1,
+     0,
+     0,
+     0,
+     40511,
+     ""
+    ],
+    [
+     9,
+     0,
+     0,
+     0,
+     30001,
+     ""
+    ],
+    [
+     18,
+     1,
+     0,
+     0,
+     3,
+     ""
+    ],
+    [
+     1,
+     0,
+     0,
+     0,
+     30001,
+     ""
+    ],
+    [
+     9,
+     0,
+     0,
+     0,
+     40511,
+     ""
+    ],
+    [
+     13,
+     1,
+     0,
+     0,
+     1638,
+     "variation sup ou egale D"
+    ],
+    [
+     6,
+     0,
+     0,
+     0,
+     40516,
+     ""
+    ],
+    [
+     19,
+     1,
+     1,
+     0,
+     10,
+     "rien = fin"
+    ],
+    [
+     1,
+     0,
+     0,
+     0,
+     30001,
+     "ENVOI"
+    ],
+    [
+     2,
+     0,
+     0,
+     0,
+     40511,
+     ""
+    ],
+    [
+     1,
+     0,
+     0,
+     0,
+     40515,
+     ""
+    ],
+    [
+     2,
+     0,
+     0,
+     0,
+     40512,
+     ""
+    ],
+    [
+     1,
+     0,
+     0,
+     0,
+     501,
+     ""
+    ],
+    [
+     7,
+     1,
+     0,
+     0,
+     1,
+     "inversion"
+    ],
+    [
+     2,
+     0,
+     0,
+     0,
+     501,
+     "RADAR1 FORCE"
+    ],
+    [
+     1,
+     1,
+     0,
+     0,
+     40,
+     "tempo mini"
+    ],
+    [
+     2,
+     0,
+     0,
+     0,
+     40514,
+     ""
+    ]
+   ],
+   "noms_io": {
+    "Din1": "LIDAR_1",
+    "Din2": "LIDAR_2",
+    "Din3": "LIDAR_3",
+    "Din4": "LIDAR_4",
+    "Din5": "LIDAR_5",
+    "Din6": "LIDAR_6",
+    "Ain1": "RADAR1"
+   },
+   "nb_tags": 9,
+   "groupes": [
+    [
+     "Alarmes",
+     6
+    ],
+    [
+     "Radars",
+     1
+    ],
+    [
+     "Statut",
+     2
+    ]
+   ]
+  }
+ ]
+}
