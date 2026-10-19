@@ -16,8 +16,11 @@ S'il n'y a encore aucun système : page d'accueil avec un grand bouton **« Ajou
 |---|---|---|
 | Fichier | Ajouter un système (.elpro.json)… | Choix du fichier → `m.ajouter_config(json)`. Statut `nouveau` : nouvel onglet, sélectionné. `version` : voir *Mettre à jour la configuration*. `identique` : « Ce système est déjà dans l'application. » et l'onglet est sélectionné. `ValueError` : afficher le message. |
 | Fichier | Importer des logs… (`Ctrl+I`) | Pour le système de l'onglet actif. Sélection multiple de `.log`, `.zip`, `.csv`. Voir § 7. |
+| Fichier | Tout récupérer (`Ctrl+Maj+R`, aussi dans la barre d'outils) | `R.recuperer_tout(...)` dans un `QThread` ; progression « <système> — fichier n / total » ; Annuler arrête après le fichier en cours. Rapport : une ligne par système (Système, Résultat, Nouveaux fichiers, Message), `alerte` en orange sous la ligne. Une centrale `mauvaise_centrale` n'est pas forcée. Puis rafraîchir tous les onglets. Grisé si aucun système n'a de connexion configurée. (v1.1) |
 | Fichier | Exporter en CSV… | Exporte les canaux cochés dans l'onglet Détail sur la période affichée (`m.exporter_csv`). Grisé hors de l'onglet Détail ou si rien n'est coché. |
 | Fichier | Quitter | — |
+| Système | Récupérer les logs (`Ctrl+R`) | Voir § 8. (v1.1) |
+| Système | Connexion à la centrale… | Voir § 8. (v1.1) |
 | Système | Mettre à jour la configuration (.elpro.json)… | Boîte : « À partir de quand cette configuration est-elle en service ? » avec un champ date/heure (par défaut : maintenant). → `m.ajouter_config(json, valable_depuis)`. Si le `system_name` du fichier est différent de celui de l'onglet : refuser (« Ce fichier décrit un autre système »). |
 | Système | Liste de log de la centrale (XML)… | Rare : seulement si la centrale n'a pas la liste standard. Choix de l'export XML de la radio → `m.definir_profil(sid, L.lire_profil_xml(chemin))`. Entrée « Revenir à la liste standard » → `m.definir_profil(sid, None)`. Ne s'applique qu'aux imports suivants. |
 | Système | Renommer… | `m.renommer` |
@@ -34,8 +37,10 @@ De haut en bas :
 **Bandeau d'informations** (une ligne, texte gris) :
 `Radio n° <serie> · Config V<version> · Données du <t0> au <t1> · <n> fichiers` — si `serie` est vide : `Radio n° —`. S'il n'y a aucune donnée : « Aucun log importé » et un bouton **Importer des logs…**.
 
+Sous le bandeau (v1.1) : bouton **Récupérer les logs** à côté de « Importer des logs… », puis texte gris `Dernière récupération : <heure suisse> — <résultat>` (d'après `m.acces(sid)`) ou « Jamais récupéré ». Si `R.rappel_necessaire(m, sid)` renvoie un texte : bandeau jaune avec ce texte et un bouton **Récupérer les logs** (à l'ouverture et à l'affichage de l'onglet).
+
 **Barre de période** (commune aux 4 sous-onglets) :
-- boutons : **Tout**, **24 h**, **7 jours**, **30 jours** (les 3 derniers comptent depuis la fin des données, pas depuis maintenant) ;
+- boutons : **Tout**, **7 jours**, **24 h**, **30 jours** (comptés depuis la fin des données, pas depuis maintenant). **7 jours** = `m.periode_par_defaut(sid)` : la dernière semaine de données, du même jour à la même heure ; c'est la **période initiale** à l'ouverture de l'application et à l'ajout d'un système (v1.1). Moins d'une semaine de données : toute la période ;
 - **Du** `[QDateTimeEdit]` **Au** `[QDateTimeEdit]` + bouton **Afficher** ;
 - boutons **◀** et **▶** : décalent la période de sa propre durée ;
 - bouton **↶ Période précédente** (historique des périodes, 20 niveaux).
@@ -175,3 +180,31 @@ Boutons : Importer des logs…, Mettre à jour la configuration…, Liste de log
 Les `avertissements` s'affichent sous la ligne du fichier, en orange.
 
 5. Rafraîchir l'onglet ; si la période affichée était « Tout », l'étendre aux nouvelles données.
+
+## 8. Récupération depuis la centrale (v1.1)
+
+### Connexion à la centrale…
+
+| Champ | Contenu |
+|---|---|
+| Adresse | `acces['adresse']`, sinon vide (adresse WireGuard propre à chaque centrale) |
+| Utilisateur | `acces['utilisateur']`, sinon `R.UTILISATEUR_DEFAUT` |
+| Mot de passe | masqué ; vide avec le texte gris « (inchangé) » si un mot de passe est déjà enregistré |
+| Note | « Activez d'abord le tunnel WireGuard. » |
+
+- **Tester la connexion** (dans un `QThread`) : « Connecté à <nom> (n° <série>) » en vert, ou le message de l'erreur en rouge.
+- **Enregistrer** : `m.definir_acces(sid, adresse, utilisateur, R.proteger_mdp(mdp))` ; champ mot de passe vide : le mot de passe enregistré est gardé tel quel.
+
+### Récupérer les logs
+
+- Si `m.acces(sid)` est vide : ouvrir d'abord *Connexion à la centrale…*.
+- `R.recuperer(...)` dans un `QThread` (instance `Magasin` dédiée) ; progression « Fichier n / total : nom » + Annuler.
+- Puis rafraîchir l'onglet (comme après un import) et afficher selon le statut :
+
+| `statut` | Affichage |
+|---|---|
+| `ok` | Tableau des imports (comme l'import manuel) + `message` ; `alerte` en orange au-dessus |
+| `rien_de_nouveau`, `annule` | Information : `message` |
+| `injoignable`, `introuvable`, `erreur` | Erreur : `message` |
+| `acces_refuse`, `non_configure` | Erreur : `message` + bouton **Connexion à la centrale…** |
+| `mauvaise_centrale` | Question : `message` + « Importer quand même dans ce système ? » (**Non** par défaut). Oui → `R.recuperer(m, sid, forcer=True, …)` |

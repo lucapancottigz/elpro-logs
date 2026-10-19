@@ -1,19 +1,19 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2026 Geoazimut SàRL (https://geoazimut.com). Tous droits réservés.
-"""Fenêtre principale : menus, un onglet par système (tous ouverts au démarrage), page d'accueil,
-glisser-déposer, barre d'état (taille de la base, copyright)."""
+"""Fenêtre principale : menus, barre d'outils, un onglet par système (tous ouverts au démarrage), page d'accueil,
+glisser-déposer, récupération des logs depuis les centrales, barre d'état (taille de la base, copyright)."""
 import os, sqlite3
 
 from PySide6.QtCore import Qt, QSettings, QStandardPaths
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (QMainWindow, QTabWidget, QStackedWidget, QWidget, QVBoxLayout, QLabel, QPushButton,
-                               QFileDialog, QMessageBox, QInputDialog, QProgressDialog)
+                               QFileDialog, QMessageBox, QInputDialog, QProgressDialog, QToolBar)
 
 import elpro_engine as M
 import elpro_logs as L
 from ui.common import lire_projet, cle_systeme, projet_normalise
 from ui.dialogs import (AboutDialog, ProgressionImport, RapportImport, DateMiseEnService, AideListeLog,
-                        site_affiche)
+                        site_affiche, ConnexionCentrale, ProgressionRecuperation, RapportRecuperationTout)
 from ui.system_tab import SystemTab
 from ui.workers import Tache, attendre_tous
 from version import APP_COMPANY, APP_COPYRIGHT, APP_WEBSITE
@@ -100,11 +100,15 @@ class MainWindow(QMainWindow):
         action(mf, 'Ajouter un système (.elpro.json)…', self.ajouter_systeme)
         self.action_importer = action(mf, 'Importer des logs…', self.importer_logs, QKeySequence('Ctrl+I'))
         self.action_exporter = action(mf, 'Exporter en CSV…', self.exporter_csv)
+        self.action_tout_recuperer = action(mf, 'Tout récupérer', self.tout_recuperer, QKeySequence('Ctrl+Shift+R'))
+        self.action_tout_recuperer.setToolTip('Récupère les logs de toutes les centrales dont la connexion est configurée')
         mf.addSeparator()
         action(mf, 'Quitter', self.close, QKeySequence.Quit)
 
         ms = self.menuBar().addMenu('&Système')
         self.actions_systeme = [
+            action(ms, 'Récupérer les logs', lambda: self.recuperer_logs(), QKeySequence('Ctrl+R')),
+            action(ms, 'Connexion à la centrale…', lambda: self.connexion_centrale()),
             action(ms, 'Mettre à jour la configuration (.elpro.json)…', self.mettre_a_jour_config),
             action(ms, 'Liste de log de la centrale (XML)…', self.liste_log_xml),
             action(ms, 'Revenir à la liste standard', self.liste_standard),
@@ -112,6 +116,12 @@ class MainWindow(QMainWindow):
         ms.addSeparator()
         self.actions_systeme += [action(ms, 'Renommer…', self.renommer),
                                  action(ms, 'Supprimer ce système…', self.supprimer)]
+
+        outils = QToolBar('Récupération')
+        outils.setMovable(False)
+        outils.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        outils.addAction(self.action_tout_recuperer)
+        self.addToolBar(outils)
 
         ma = self.menuBar().addMenu('&Aide')
         action(ma, 'Liste de log à configurer sur la centrale', lambda: AideListeLog(self).exec())
@@ -148,6 +158,8 @@ class MainWindow(QMainWindow):
         self.action_importer.setEnabled(a)
         for x in self.actions_systeme:
             x.setEnabled(a)
+        self.action_tout_recuperer.setEnabled(any((self.magasin.acces(s['id']) or {}).get('adresse')
+                                                  for s in self.magasin.systemes()))
         self._maj_export()
         self._maj_taille()
 
@@ -332,6 +344,70 @@ class MainWindow(QMainWindow):
         self.onglets.removeTab(self.onglets.indexOf(tab))
         tab.deleteLater()
         self._maj_etat()
+
+    # ================================================================ récupération depuis la centrale
+    def connexion_centrale(self, tab=None):
+        """Système › Connexion à la centrale. True si la connexion a été enregistrée."""
+        tab = tab or self.onglet_actif()
+        if tab is None:
+            return False
+        ok = bool(ConnexionCentrale(self, self.magasin, tab.sid, tab.nom).exec())
+        if ok:
+            tab.maj_recuperation()
+            self._maj_etat()
+        return ok
+
+    def recuperer_logs(self, tab=None, forcer=False):
+        tab = tab or self.onglet_actif()
+        if tab is None:
+            return
+        if not self.magasin.acces(tab.sid) and not self.connexion_centrale(tab):
+            return
+        d = ProgressionRecuperation(self, self.chemin_base, tab.sid, forcer)
+        d.exec()
+        d.thread.wait()
+        rap = d.rapport
+        self.reouvrir_base()
+        tab.rafraichir(apres_import=True)
+        self._maj_taille()
+        self.afficher_recuperation(tab, rap)
+
+    def afficher_recuperation(self, tab, rap):
+        """Affichage selon le statut du rapport (textes du moteur)."""
+        titre = f'Récupérer les logs — {tab.nom}'
+        st, msg = rap['statut'], rap['message']
+        if st == 'ok':
+            self.rapport = RapportImport(self, [(None, rap['imports'])], titre=titre, resume=msg,
+                                         alerte=rap.get('alerte'))
+            self.rapport.exec()
+        elif st in ('rien_de_nouveau', 'annule'):
+            QMessageBox.information(self, titre, msg)
+        elif st in ('acces_refuse', 'non_configure'):
+            b = QMessageBox(QMessageBox.Critical, titre, msg, QMessageBox.Close, self)
+            connexion = b.addButton('Connexion à la centrale…', QMessageBox.ActionRole)
+            b.exec()
+            if b.clickedButton() is connexion:
+                self.connexion_centrale(tab)
+        elif st == 'mauvaise_centrale':
+            rep = QMessageBox.question(self, titre, f'{msg}\n\nImporter quand même dans ce système ?',
+                                       QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if rep == QMessageBox.Yes:
+                self.recuperer_logs(tab, forcer=True)
+        else:                                       # injoignable, introuvable, erreur
+            QMessageBox.critical(self, titre, msg)
+
+    def tout_recuperer(self):
+        if not self.action_tout_recuperer.isEnabled():
+            return
+        d = ProgressionRecuperation(self, self.chemin_base)
+        d.exec()
+        d.thread.wait()
+        self.reouvrir_base()
+        for k in range(self.onglets.count()):
+            self.onglets.widget(k).rafraichir(apres_import=True)
+        self._maj_taille()
+        self.rapport = RapportRecuperationTout(self, d.rapport or [])
+        self.rapport.exec()
 
     # ================================================================ import des logs
     def importer_logs(self, chemins=None):

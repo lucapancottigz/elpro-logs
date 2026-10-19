@@ -8,11 +8,12 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap, QGuiApplication
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QProgressBar,
                                QTableWidget, QHeaderView, QDialogButtonBox, QPlainTextEdit, QMessageBox,
-                               QFormLayout)
+                               QFormLayout, QLineEdit)
 
 import elpro_logs as L
 from ui.common import cellule, preparer_tableau, editeur_date, utc_depuis_qdatetime, ORANGE
-from ui.workers import ImportLogs
+from ui.workers import ImportLogs, Fonction, RecupererLogs
+import elpro_remote as R
 from version import APP_VERSION, APP_COPYRIGHT, APP_WEBSITE
 
 # Résultat affiché pour chaque statut d'import (02_Ecrans.md § 7)
@@ -118,17 +119,25 @@ class ProgressionImport(QDialog):
 class RapportImport(QDialog):
     """Rapport final : Fichier, Résultat, Détail ; avertissements en orange sous la ligne du fichier."""
 
-    def __init__(self, parent, resultats, annule=False):
+    def __init__(self, parent, resultats, annule=False, titre="Rapport d'import", resume=None, alerte=None):
         super().__init__(parent)
-        self.setWindowTitle("Rapport d'import")
+        self.setWindowTitle(titre)
         self.resize(820, 380)
         lay = QVBoxLayout(self)
         rapports = [r for _c, rs in resultats for r in rs]
-        n_ok = sum(1 for r in rapports if r.get('statut') == 'importe')
-        resume = f'{n_ok} log(s) importé(s) sur {len(rapports)}.'
-        if annule:
-            resume += ' Import annulé : les fichiers suivants n\'ont pas été traités.'
-        lay.addWidget(QLabel(resume))
+        if alerte:                                  # ex. logs déjà effacés par la centrale
+            self.alerte = QLabel(alerte)
+            self.alerte.setWordWrap(True)
+            self.alerte.setStyleSheet(f'color: {ORANGE}; font-weight: bold;')
+            lay.addWidget(self.alerte)
+        if resume is None:
+            n_ok = sum(1 for r in rapports if r.get('statut') == 'importe')
+            resume = f'{n_ok} log(s) importé(s) sur {len(rapports)}.'
+            if annule:
+                resume += ' Import annulé : les fichiers suivants n\'ont pas été traités.'
+        self.resume = QLabel(resume)
+        self.resume.setWordWrap(True)
+        lay.addWidget(self.resume)
         self.table = preparer_tableau(QTableWidget(), ['Fichier', 'Résultat', 'Détail'])
         for r in rapports:
             res, det = texte_resultat(r)
@@ -158,6 +167,198 @@ class RapportImport(QDialog):
     def lignes(self):
         """Contenu du tableau (pour la recette automatique)."""
         return [tuple(self.table.item(k, c).text() if self.table.item(k, c) else '' for c in range(3))
+                for k in range(self.table.rowCount())]
+
+
+# ============================================================================================ centrale
+class ConnexionCentrale(QDialog):
+    """Système › Connexion à la centrale : adresse, utilisateur, mot de passe (chiffré par le moteur),
+    bouton Tester (dans un thread). Le mot de passe n'est jamais écrit en clair."""
+
+    def __init__(self, parent, magasin, sid, nom):
+        super().__init__(parent)
+        self.m, self.sid = magasin, sid
+        self.acces = magasin.acces(sid)
+        self.setWindowTitle(f'Connexion à la centrale — {nom}')
+        self.setMinimumWidth(460)
+        lay = QVBoxLayout(self)
+        f = QFormLayout()
+        self.adresse = QLineEdit(self.acces['adresse'] if self.acces else R.ADRESSE_DEFAUT)
+        self.adresse.setPlaceholderText('adresse de la centrale dans le tunnel WireGuard')
+        f.addRow('Adresse :', self.adresse)
+        self.utilisateur = QLineEdit((self.acces or {}).get('utilisateur') or R.UTILISATEUR_DEFAUT)
+        f.addRow('Utilisateur :', self.utilisateur)
+        self.mdp = QLineEdit()
+        self.mdp.setEchoMode(QLineEdit.Password)
+        if self.acces and self.acces['mdp']:
+            self.mdp.setPlaceholderText('(inchangé)')
+        f.addRow('Mot de passe :', self.mdp)
+        lay.addLayout(f)
+        note = QLabel('Activez d\'abord le tunnel WireGuard.')
+        note.setStyleSheet('color: gray;')
+        lay.addWidget(note)
+        t = QHBoxLayout()
+        self.bouton_tester = QPushButton('Tester la connexion')
+        self.bouton_tester.clicked.connect(self.tester)
+        t.addWidget(self.bouton_tester)
+        self.resultat = QLabel()
+        self.resultat.setWordWrap(True)
+        t.addWidget(self.resultat, 1)
+        lay.addLayout(t)
+        b = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        b.button(QDialogButtonBox.Save).setText('Enregistrer')
+        b.button(QDialogButtonBox.Cancel).setText('Annuler')
+        b.accepted.connect(self.enregistrer)
+        b.rejected.connect(self.reject)
+        lay.addWidget(b)
+        self.thread = None
+
+    def _mdp(self):
+        """Mot de passe saisi, sinon celui déjà enregistré (déchiffré seulement pour s'en servir)."""
+        if self.mdp.text():
+            return self.mdp.text()
+        if self.acces and self.acces['mdp']:
+            return R.retrouver_mdp(self.acces['mdp'])
+        return ''
+
+    def tester(self):
+        try:
+            session = R.Session(self.adresse.text().strip(), self.utilisateur.text().strip(), self._mdp())
+        except (ValueError, OSError) as e:
+            self._afficher(False, str(e))
+            return
+        self.bouton_tester.setEnabled(False)
+        self.resultat.setStyleSheet('color: gray;')
+        self.resultat.setText('Connexion…')
+        self.thread = Fonction(session.identifier)
+        self.thread.termine.connect(lambda c: self._afficher(True, f"Connecté à {c['nom'] or '?'} (n° {c['serie'] or '?'})"))
+        self.thread.echec.connect(lambda e: self._afficher(False, getattr(e, 'message', None) or str(e)))
+        self.thread.start()
+
+    def _afficher(self, ok, texte):
+        self.bouton_tester.setEnabled(True)
+        self.resultat.setStyleSheet('color: #2E7D32;' if ok else 'color: #C62828;')
+        self.resultat.setText(texte)
+
+    def enregistrer(self):
+        if not self.adresse.text().strip():
+            QMessageBox.warning(self, 'Connexion à la centrale', 'Saisissez l\'adresse de la centrale.')
+            return
+        if self.mdp.text():
+            protege = R.proteger_mdp(self.mdp.text())
+        else:                                       # champ vide : garder le mot de passe enregistré tel quel
+            protege = self.acces['mdp'] if self.acces else R.proteger_mdp('')
+        self.m.definir_acces(self.sid, self.adresse.text(), self.utilisateur.text() or R.UTILISATEUR_DEFAUT, protege)
+        self.accept()
+
+
+class ProgressionRecuperation(QDialog):
+    """Progression d'une récupération : « Fichier n / total : nom » (ou « <système> — fichier n / total »),
+    bouton Annuler (arrêt après le fichier en cours). `rapport` à la fermeture."""
+
+    def __init__(self, parent, chemin_base, sid=None, forcer=False):
+        super().__init__(parent)
+        self.setWindowTitle('Récupération des logs' if sid is not None else 'Tout récupérer')
+        self.setMinimumWidth(480)
+        self.setWindowFlag(Qt.WindowCloseButtonHint, False)
+        lay = QVBoxLayout(self)
+        self.texte = QLabel('Connexion à la centrale…')
+        lay.addWidget(self.texte)
+        self.barre = QProgressBar()
+        self.barre.setRange(0, 0)                   # indéterminée tant que la liste n'est pas connue
+        lay.addWidget(self.barre)
+        b = QHBoxLayout()
+        b.addStretch(1)
+        self.bouton_annuler = QPushButton('Annuler')
+        self.bouton_annuler.setToolTip('Arrête la récupération après le fichier en cours')
+        self.bouton_annuler.clicked.connect(self.annuler)
+        b.addWidget(self.bouton_annuler)
+        lay.addLayout(b)
+        self.thread = RecupererLogs(chemin_base, sid, forcer)
+        self.thread.avancement.connect(self._avance)
+        self.thread.finished.connect(self.accept)
+
+    @property
+    def rapport(self):
+        return self.thread.rapport
+
+    def exec(self):
+        self.thread.start()
+        return super().exec()
+
+    def _avance(self, systeme, n, total, nom):
+        self.barre.setRange(0, max(1, total))
+        self.barre.setValue(n)
+        if systeme:
+            self.texte.setText(f'{systeme} — fichier {min(n + 1, total)} / {total}' if total else
+                               f'{systeme} — aucun nouveau fichier')
+        elif nom:
+            self.texte.setText(f'Fichier {n + 1} / {total} : {nom}')
+        else:
+            self.texte.setText(f'{total} fichier(s) traité(s).')
+
+    def annuler(self):
+        self.thread.annuler()
+        self.bouton_annuler.setEnabled(False)
+        self.bouton_annuler.setText('Arrêt après le fichier en cours…')
+
+    def reject(self):
+        self.annuler()
+
+    def closeEvent(self, e):
+        if self.thread.isRunning():
+            self.annuler()
+            e.ignore()
+        else:
+            e.accept()
+
+
+# Résultat affiché pour chaque statut de récupération (COMPLEMENT_V1.1, tableau des statuts)
+STATUTS_RECUPERATION = {
+    'ok': 'Logs importés', 'rien_de_nouveau': 'Aucun nouveau fichier', 'injoignable': 'Centrale injoignable',
+    'introuvable': 'Erreur', 'erreur': 'Erreur', 'acces_refuse': 'Accès refusé',
+    'non_configure': 'Connexion non configurée', 'mauvaise_centrale': 'Autre centrale (non importé)',
+    'annule': 'Annulé'}
+
+
+class RapportRecuperationTout(QDialog):
+    """Rapport de « Tout récupérer » : une ligne par système ; alerte en orange sous la ligne."""
+
+    def __init__(self, parent, resultats):
+        super().__init__(parent)
+        self.setWindowTitle('Tout récupérer')
+        self.resize(900, 360)
+        lay = QVBoxLayout(self)
+        if not resultats:
+            lay.addWidget(QLabel('Aucun système n\'a de connexion à la centrale configurée.'))
+        self.table = preparer_tableau(QTableWidget(), ['Système', 'Résultat', 'Nouveaux fichiers', 'Message'])
+        for S, rap in resultats:
+            k = self.table.rowCount()
+            self.table.insertRow(k)
+            st = rap.get('statut')
+            couleur = '#2E7D32' if st == 'ok' else (None if st in ('rien_de_nouveau', 'annule') else '#C62828')
+            self.table.setItem(k, 0, cellule(S['nom']))
+            self.table.setItem(k, 1, cellule(STATUTS_RECUPERATION.get(st, st), couleur=couleur))
+            self.table.setItem(k, 2, cellule(rap.get('nouveaux', 0), droite=True))
+            self.table.setItem(k, 3, cellule(rap.get('message', '')))
+            if rap.get('alerte'):
+                k = self.table.rowCount()
+                self.table.insertRow(k)
+                self.table.setItem(k, 0, cellule(''))
+                self.table.setItem(k, 1, cellule(rap['alerte'], couleur=ORANGE))
+                self.table.setSpan(k, 1, 1, 3)
+        h = self.table.horizontalHeader()
+        for c in range(3):
+            h.setSectionResizeMode(c, QHeaderView.ResizeToContents)
+        h.setStretchLastSection(True)
+        lay.addWidget(self.table)
+        b = QDialogButtonBox(QDialogButtonBox.Close)
+        b.button(QDialogButtonBox.Close).setText('Fermer')
+        b.rejected.connect(self.reject)
+        lay.addWidget(b)
+
+    def lignes(self):
+        return [tuple(self.table.item(k, c).text() if self.table.item(k, c) else '' for c in range(4))
                 for k in range(self.table.rowCount())]
 
 

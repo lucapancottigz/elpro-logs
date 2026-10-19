@@ -5,7 +5,7 @@
 ```
 .\venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
-Attendu : `Ran 24 tests … OK`. À lancer dans `build.bat` avant l'empaquetage, comme pour ELPRO Config (arrêt si échec).
+Attendu : `Ran 36 tests … OK` (24 tests du moteur + 12 de la récupération, v1.1). À lancer dans `build.bat` avant l'empaquetage, comme pour ELPRO Config (arrêt si échec).
 
 ## 2. Jeu de démonstration
 
@@ -75,3 +75,26 @@ Base vide (renommer temporairement `Documents\ELPRO Logs` s'il existe), puis :
 | I1 | Installer sur un PC sans Python | L'application démarre, heure suisse correcte (test R2) | |
 | I2 | ELPRO Config et ELPRO Logs installés ensemble | Deux entrées distinctes dans Paramètres › Applications ; désinstaller l'une ne touche pas l'autre | |
 | I3 | Désinstaller ELPRO Logs | `Documents\ELPRO Logs\elpro_logs.db` **reste** (données de l'utilisateur) | |
+
+## 3. Récupération depuis la centrale et période par défaut (v1.1)
+
+Automatique : `tests_ui\ui_acceptance.py` simule la centrale avec `FausseCentrale` (`tests/test_remote.py`) et vérifie le dialogue de connexion, le bouton, la progression, l'annulation et les cas `ok`, `rien_de_nouveau`, `acces_refuse`, `injoignable`, `mauvaise_centrale`, `non_configure`, ainsi que Tout récupérer.
+
+Les contrôles R2 et G1 portent sur la période « Tout » : avec les 3 jours de démo, la période par défaut est déjà toute la période (P2).
+
+Sur Windows, avec la vraie centrale d'un site (tunnel WireGuard activé) — **ne jamais écrire dans le dépôt le nom, l'adresse ou le n° de série d'un vrai site** :
+
+| # | Contrôle | Attendu | OK |
+|---|---|---|---|
+| W1 | Connexion à la centrale : adresse du tunnel, user, mot de passe → Tester | « Connecté à <nom de la centrale> (n° <série>) » | |
+| W2 | Récupérer les logs (1ʳᵉ fois) | Environ 160 fichiers importés, progression visible ; environ 7 jours de données | |
+| W3 | Récupérer à nouveau | « Aucun nouveau fichier sur la centrale. » (ou 1–2 fichiers si plus d'une heure a passé) | |
+| W4 | Tunnel WireGuard désactivé → Récupérer | Message « Centrale injoignable … Le tunnel WireGuard est-il activé ? » | |
+| W5 | Mauvais mot de passe | Message « La centrale refuse … » + bouton Connexion à la centrale | |
+| W6 | Saisir volontairement l'adresse de la centrale d'un **autre** site → Récupérer | Message « La centrale connectée est … » ; Non → rien d'importé | |
+| W6b | Configurer 2 systèmes, puis **Tout récupérer** | Une ligne de rapport par système, les deux onglets à jour | |
+| W6c | Ouvrir l'application | Période affichée : la dernière semaine de données (= bouton **7 jours**) | |
+| P1 | Système avec plus de 7 jours de données : relancer l'application | Période = dernière semaine (même jour, même heure) | |
+| P2 | Système avec 3 jours de démo | Période = les 3 jours entiers (R2 de 1.0 inchangé) | |
+| W7 | Fermer, relancer | Adresse et utilisateur conservés ; mot de passe non redemandé | |
+| W8 | `elpro_logs.db` ouvert avec un éditeur de texte | Le mot de passe n'apparaît pas en clair | |

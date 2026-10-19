@@ -95,3 +95,63 @@ class ImportLogs(QThread):
                 self.fichier_termine.emit(i, chemin, r)
         finally:
             m.fermer()
+
+
+class Fonction(QThread):
+    """Exécute fonction() hors du thread de l'interface, sans base (ex. test de connexion à la centrale)."""
+    termine = Signal(object)
+    echec = Signal(object)                       # l'exception levée
+
+    def __init__(self, fonction, parent=None):
+        super().__init__(parent)
+        self.fonction = fonction
+        _garder(self)
+
+    def run(self):
+        try:
+            res = self.fonction()
+        except Exception as e:
+            self.echec.emit(e)
+        else:
+            self.termine.emit(res)
+
+
+class RecupererLogs(QThread):
+    """Récupération des logs depuis la centrale (elpro_remote), avec sa propre instance L.Magasin.
+    sid = None : tous les systèmes configurés (recuperer_tout). Annuler : arrêt après le fichier en cours."""
+    avancement = Signal(str, int, int, str)      # système, n, total, nom du fichier
+    resultat = Signal(object)                    # rapport (un système) ou [(systeme, rapport)] (tous)
+
+    def __init__(self, chemin_base, sid=None, forcer=False, parent=None):
+        super().__init__(parent)
+        self.chemin_base, self.sid, self.forcer = chemin_base, sid, forcer
+        self.annule = False
+        self.rapport = None
+        _garder(self)
+
+    def annuler(self):
+        self.annule = True
+
+    def run(self):
+        import elpro_remote as R
+        m = None
+        try:
+            m = L.Magasin(self.chemin_base)
+            if self.sid is None:
+                self.rapport = R.recuperer_tout(
+                    m, progression=lambda s, n, t, nom: self.avancement.emit(s, n, t, nom),
+                    annuler=lambda: self.annule)
+            else:
+                self.rapport = R.recuperer(
+                    m, self.sid, forcer=self.forcer,
+                    progression=lambda n, t, nom: self.avancement.emit('', n, t, nom),
+                    annuler=lambda: self.annule)
+        except Exception as e:           # erreur inattendue : rapportée comme les erreurs de la centrale
+            traceback.print_exc()
+            rap = {'statut': 'erreur', 'message': str(e) or e.__class__.__name__, 'centrale': None,
+                   'disponibles': 0, 'nouveaux': 0, 'imports': [], 'plus_ancien': None, 'alerte': None}
+            self.rapport = rap if self.sid is not None else []
+        finally:
+            if m is not None:
+                m.fermer()
+        self.resultat.emit(self.rapport)

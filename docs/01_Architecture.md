@@ -123,7 +123,25 @@ Un **canal** est un `dict` : `registre`, `nom`, `libelle`, `genre`, `famille`, `
 
 1. Ouvrir `L.Magasin(L.chemin_base_defaut())`. Si l'ouverture échoue (base d'une version plus récente, fichier verrouillé) : message clair et fermeture.
 2. Créer un onglet par système de `m.systemes()`, dans cet ordre ; sélectionner le dernier onglet actif (`QSettings`).
-3. Période initiale de chaque onglet : **toute la période** des données.
+3. Période initiale de chaque onglet (v1.1) : `m.periode_par_defaut(sid)`, la **dernière semaine de données**, du même jour de la semaine à la même heure (ex. lundi 19.10 09:17 → lundi 12.10 09:17), en heure suisse, changement d'heure compris. Moins d'une semaine de données : toute la période. Aucune donnée : pas de période.
+4. Après un import ou une récupération : si la période affichée est la période par défaut (bouton **7 jours**) ou **Tout**, elle est recalculée pour suivre les nouvelles données ; une période choisie à la main reste en place jusqu'à la fermeture.
+
+## Récupération depuis la centrale (v1.1)
+
+Module `engine/elpro_remote.py` (fourni, NE PAS MODIFIER) : connexion HTTP à la centrale à travers le tunnel WireGuard activé à la main, identification (le moteur vérifie toujours le n° de série ou le nom de la centrale), liste et téléchargement des fichiers de log qui ne sont pas encore dans la base, mot de passe chiffré par Windows (DPAPI).
+
+```python
+import elpro_remote as R
+m.definir_acces(sid, adresse, utilisateur, R.proteger_mdp(mdp)); m.acces(sid)
+R.Session(adresse, utilisateur, mdp).identifier()       # {'nom', 'serie'} ; lève R.ErreurCentrale
+R.recuperer(m, sid, forcer=False, progression=f(n, total, nom), annuler=f() -> bool)
+R.recuperer_tout(m, progression=f(systeme, n, total, nom), annuler=f() -> bool)
+R.rappel_necessaire(m, sid)                             # texte si les dernières données ont > 5 jours
+```
+
+- Le test de connexion et la récupération tournent dans un `QThread` ; la récupération ouvre **sa propre instance** `L.Magasin`, comme l'import.
+- Le mot de passe n'est jamais écrit en clair (ni dans la base, ni dans `QSettings`, ni dans un journal).
+- Aucune adresse, aucun nom ni n° de série de vraie centrale dans le dépôt.
 
 ## Empaquetage
 
