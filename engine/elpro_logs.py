@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2026 Geoazimut SàRL (https://geoazimut.com). Tous droits réservés.
 """
-Moteur ELPRO Logs (v1.0) — IMPLÉMENTATION DE RÉFÉRENCE.
+Moteur ELPRO Logs (v1.1) — IMPLÉMENTATION DE RÉFÉRENCE.
 
 Rôle :
   1. lire les fichiers de log (DataLog) des centrales ELPRO 415U-2-C4 ;
@@ -184,6 +184,40 @@ def utc_depuis_locale(annee, mois, jour, h=0, mi=0, s=0):
     """Date/heure suisse -> seconde UTC (pour les sélecteurs de période)."""
     d = datetime.datetime(annee, mois, jour, h, mi, s, tzinfo=ZONE or datetime.timezone.utc)
     return int(d.timestamp())
+
+
+JOURS_DEFAUT = 6           # période affichée par défaut : 6 jours en arrière + le jour actuel
+
+
+def periode_defaut(maintenant_utc=None, jours=JOURS_DEFAUT):
+    """(t0, t1) : de 00:00 (heure suisse) il y a `jours` jours jusqu'à maintenant."""
+    t1 = maintenant_utc if maintenant_utc is not None else int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+    d = datetime.datetime.fromtimestamp(t1, datetime.timezone.utc)
+    if ZONE:
+        d = d.astimezone(ZONE)
+    j = d.date() - datetime.timedelta(days=jours)
+    return utc_depuis_locale(j.year, j.month, j.day), t1
+
+
+JOURS_DEFAUT = 6           # période par défaut : le jour actuel + 6 jours en arrière
+
+
+def debut_jour_local(t, decalage_jours=0):
+    """Minuit (heure suisse) du jour de t, décalé de `decalage_jours` jours -> seconde UTC."""
+    d = datetime.datetime.fromtimestamp(t, datetime.timezone.utc)
+    if ZONE:
+        d = d.astimezone(ZONE)
+    j = d.date() + datetime.timedelta(days=decalage_jours)
+    return utc_depuis_locale(j.year, j.month, j.day)
+
+
+def reculer_jours(t, jours):
+    """Recule de n jours calendaires en heure suisse (même heure affichée, changement d'heure compris)."""
+    d = datetime.datetime.fromtimestamp(t, datetime.timezone.utc)
+    if ZONE:
+        loc = d.astimezone(ZONE).replace(tzinfo=None) - datetime.timedelta(days=jours)
+        return int(loc.replace(tzinfo=ZONE).timestamp())
+    return int((d - datetime.timedelta(days=jours)).timestamp())
 
 
 def duree_texte(s):
@@ -486,6 +520,9 @@ CREATE TABLE IF NOT EXISTS systemes (
 CREATE TABLE IF NOT EXISTS configs (
     id INTEGER PRIMARY KEY, systeme_id INTEGER NOT NULL, version TEXT, valable_depuis INTEGER NOT NULL,
     importe_le INTEGER NOT NULL, json BLOB NOT NULL);
+CREATE TABLE IF NOT EXISTS acces (
+    systeme_id INTEGER PRIMARY KEY, adresse TEXT, utilisateur TEXT, mdp BLOB,
+    derniere_recuperation INTEGER, dernier_resultat TEXT);
 CREATE TABLE IF NOT EXISTS profils (
     systeme_id INTEGER PRIMARY KEY, json TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS fichiers (
@@ -699,7 +736,7 @@ class Magasin:
         self.cx.execute('UPDATE systemes SET nom=? WHERE id=?', (nom, sid)); self.cx.commit()
 
     def supprimer_systeme(self, sid):
-        for tab in ('blocs', 'couverture', 'fichiers', 'configs', 'profils'):
+        for tab in ('blocs', 'couverture', 'fichiers', 'configs', 'profils', 'acces'):
             self.cx.execute(f'DELETE FROM {tab} WHERE systeme_id=?', (sid,))
         self.cx.execute('DELETE FROM systemes WHERE id=?', (sid,))
         self.cx.commit()
@@ -719,6 +756,41 @@ class Magasin:
         return json.loads(r[0]) if r else None
 
     # ---------------------------------------------------------------- import des logs
+    # ---------------------------------------------------------------- accès à la centrale (v1.1)
+    def definir_acces(self, sid, adresse, utilisateur, mdp_protege):
+        """mdp_protege : octets produits par elpro_remote.proteger_mdp() (jamais le mot de passe en clair)."""
+        ex = self.acces(sid)
+        self.cx.execute('INSERT OR REPLACE INTO acces VALUES (?,?,?,?,?,?)',
+                        (sid, adresse.strip(), utilisateur.strip(), mdp_protege,
+                         ex['derniere_recuperation'] if ex else None, ex['dernier_resultat'] if ex else None))
+        self.cx.commit()
+
+    def acces(self, sid):
+        r = self.cx.execute('SELECT adresse, utilisateur, mdp, derniere_recuperation, dernier_resultat '
+                            'FROM acces WHERE systeme_id=?', (sid,)).fetchone()
+        if not r:
+            return None
+        return dict(zip(('adresse', 'utilisateur', 'mdp', 'derniere_recuperation', 'dernier_resultat'), r))
+
+    def noter_recuperation(self, sid, t, resultat):
+        self.cx.execute('UPDATE acces SET derniere_recuperation=?, dernier_resultat=? WHERE systeme_id=?',
+                        (t, resultat, sid))
+        self.cx.commit()
+
+    def noms_fichiers(self, sid):
+        """Noms des fichiers déjà importés (pour ne télécharger que les nouveaux)."""
+        return {n for (n,) in self.cx.execute('SELECT nom FROM fichiers WHERE systeme_id=?', (sid,))}
+
+    def importer_octets(self, sid, octets, nom, forcer_serie=False, progression=None):
+        """Comme importer_fichier, à partir du contenu d'un fichier (téléchargé)."""
+        try:
+            logs = [analyser_csv(txt, n) for n, txt in _csv_depuis_octets(octets, nom)]
+        except ErreurLog as e:
+            return [{'fichier': nom, 'statut': 'erreur', 'message': str(e)}]
+        for lg in logs:
+            lg['nom'] = nom
+        return [self.importer_log(sid, lg, forcer_serie, progression) for lg in logs]
+
     def importer_fichier(self, sid, chemin, forcer_serie=False, progression=None):
         """Importe un fichier .log/.zip/.csv. Renvoie une liste de rapports (un par log contenu)."""
         try:
@@ -849,9 +921,38 @@ class Magasin:
         self.cx.execute('VACUUM')
 
     # ---------------------------------------------------------------- lecture
+    def periode_defaut(self, sid, maintenant=None, jours=JOURS_DEFAUT):
+        """Période affichée à l'ouverture : le jour actuel + les `jours` jours précédents (jours entiers,
+        heure suisse), jusqu'à la fin des données.
+        - Données plus courtes que la fenêtre : la période commence au début des données.
+        - Pas de données dans la fenêtre (logs anciens) : même fenêtre, mais calée sur le dernier jour de données.
+        - Aucune donnée : None."""
+        p = self.periode(sid)
+        if not p:
+            return None
+        maintenant = maintenant or self._maintenant()
+        t0 = debut_jour_local(maintenant, -jours)
+        if p[1] <= t0:                                   # rien dans la fenêtre : on se cale sur les données
+            t0 = debut_jour_local(p[1] - 1, -jours)
+        return (max(t0, p[0]), p[1])
+
+    @staticmethod
+    def _maintenant():
+        return maintenant()
+
     def periode(self, sid):
         r = self.cx.execute('SELECT MIN(debut), MAX(fin) FROM couverture WHERE systeme_id=?', (sid,)).fetchone()
         return None if r[0] is None else (r[0], r[1])
+
+    def periode_par_defaut(self, sid, jours=7):
+        """Période affichée à l'ouverture (v1.1) : la dernière semaine de données, du même jour de la
+        semaine à la même heure (ex. lundi 09:17 -> lundi précédent 09:17), en heure suisse : 7 jours
+        calendaires, donc 7 × 24 h ± 1 h lors d'un changement d'heure.
+        Moins d'une semaine de données : toute la période. Aucune donnée : None."""
+        p = self.periode(sid)
+        if not p:
+            return None
+        return (max(p[0], reculer_jours(p[1], jours)), p[1])
 
     def couverture(self, sid, t0, t1):
         """Plages avec données dans [t0, t1), fusionnées."""

@@ -2,6 +2,16 @@
 
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation [SemVer](https://semver.org/lang/fr/).
 
+## [1.1.0] — 2026-10-19
+
+### Ajouté
+- Récupération automatique des logs depuis la centrale (à travers le tunnel WireGuard) : bouton **Récupérer les logs** (`Ctrl+R`) dans chaque onglet, **Tout récupérer** (`Ctrl+Maj+R`) pour toutes les centrales configurées, progression fichier par fichier et annulation. L'identité de la centrale est toujours vérifiée avant de télécharger.
+- **Système › Connexion à la centrale…** : adresse, utilisateur, mot de passe (chiffré par Windows, jamais enregistré en clair), bouton Tester la connexion.
+- Ligne « Dernière récupération » sous le bandeau de chaque système, et bandeau de rappel quand les dernières données ont plus de 5 jours (la centrale ne garde qu'environ une semaine de logs).
+
+### Modifié
+- Période affichée à l'ouverture : la dernière semaine de données (même jour, même heure ; toute la période s'il y a moins d'une semaine). Le bouton **7 jours** affiche cette période ; elle suit les nouvelles données après un import ou une récupération, sauf si une autre période a été choisie.
+
 ## [1.0.0] — 2026-10-15
 
 Première version.
@@ -22,4 +32,5 @@ Première version.
 - Frise de la Vue globale : la bulle d'information ne clignote plus ; elle n'est mise à jour qu'en passant sur un autre segment et reste affichée tant que la souris est dans le segment survolé.
 - Thème sombre de Windows : texte foncé imposé partout où l'application impose un fond coloré (lignes du Journal, cellules mises en évidence du tableau de synthèse, cartes des chiffres clés, logs partiellement importés de l'onglet Fichiers).
 
+[1.1.0]: https://github.com/lucapancottigz/elpro-logs/releases/tag/v1.1.0
 [1.0.0]: https://github.com/lucapancottigz/elpro-logs/releases/tag/v1.0.0

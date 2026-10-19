@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushB
                                QMessageBox)
 
 import elpro_logs as L
+import elpro_remote as R
 from ui.common import editeur_date, qdatetime, utc_depuis_qdatetime, pluriel
 from ui.workers import Tache
 from ui.overview_view import OverviewView
@@ -19,7 +20,13 @@ from ui.files_view import FilesView
 
 HISTORIQUE_MAX = 20
 CACHE_MAX = 12
-PRESETS = (('24 h', 86400), ('7 jours', 7 * 86400), ('30 jours', 30 * 86400))
+PRESETS = (('24 h', 86400), ('30 jours', 30 * 86400))
+# Résultat de la dernière récupération (statut du moteur -> texte court de la ligne grise)
+RESULTATS_RECUPERATION = {
+    'ok': 'logs importés', 'rien_de_nouveau': 'aucun nouveau fichier', 'injoignable': 'centrale injoignable',
+    'acces_refuse': 'accès refusé', 'introuvable': 'page introuvable sur la centrale',
+    'mauvaise_centrale': 'autre centrale connectée', 'non_configure': 'connexion non configurée',
+    'annule': 'annulée', 'erreur': 'erreur'}
 
 
 class SystemTab(QWidget):
@@ -31,7 +38,9 @@ class SystemTab(QWidget):
         self.sid = systeme['id']
         self.nom = systeme['nom']
         self.t0 = self.t1 = None
-        self.tout = True                      # période « Tout » : suit les nouvelles données
+        # période automatique qui suit les nouvelles données : 'defaut' (dernière semaine de données),
+        # 'tout' (toute la période) ; None = période choisie à la main (gardée jusqu'à la fermeture)
+        self.mode = 'defaut'
         self.historique = []
         self._cache = OrderedDict()
         self._en_cours = {}
@@ -50,8 +59,31 @@ class SystemTab(QWidget):
         self.bouton_importer = QPushButton('Importer des logs…')
         self.bouton_importer.clicked.connect(lambda: self.fenetre.importer_logs())
         ligne.addWidget(self.bouton_importer)
+        self.bouton_recuperer = QPushButton('Récupérer les logs')
+        self.bouton_recuperer.setToolTip('Télécharge depuis la centrale les logs qui ne sont pas encore dans la base '
+                                         '(tunnel WireGuard activé)')
+        self.bouton_recuperer.clicked.connect(lambda: self.fenetre.recuperer_logs(self))
+        ligne.addWidget(self.bouton_recuperer)
         ligne.addStretch(1)
         lay.addLayout(ligne)
+        self.ligne_recuperation = QLabel()
+        self.ligne_recuperation.setStyleSheet('color: gray;')
+        lay.addWidget(self.ligne_recuperation)
+
+        # --- rappel : la centrale ne garde qu'environ une semaine de logs
+        self.rappel = QFrame()
+        self.rappel.setStyleSheet('QFrame { background: #FFF59D; border-radius: 3px; } '
+                                  'QLabel { color: #202020; background: transparent; }')
+        r = QHBoxLayout(self.rappel)
+        r.setContentsMargins(6, 3, 6, 3)
+        self.texte_rappel = QLabel()
+        self.texte_rappel.setWordWrap(True)
+        r.addWidget(self.texte_rappel, 1)
+        bt = QPushButton('Récupérer les logs')
+        bt.clicked.connect(lambda: self.fenetre.recuperer_logs(self))
+        r.addWidget(bt)
+        self.rappel.hide()
+        lay.addWidget(self.rappel)
 
         # --- barre de période
         self.barre = QFrame()
@@ -61,6 +93,11 @@ class SystemTab(QWidget):
         bt = QPushButton('Tout')
         bt.setToolTip('Toute la période des données')
         bt.clicked.connect(self.periode_tout)
+        b.addWidget(bt)
+        self.boutons_presets.append(bt)
+        bt = QPushButton('7 jours')
+        bt.setToolTip('La dernière semaine de données, du même jour à la même heure (période par défaut)')
+        bt.clicked.connect(self.periode_defaut)
         b.addWidget(bt)
         self.boutons_presets.append(bt)
         for texte, d in PRESETS:
@@ -156,9 +193,13 @@ class SystemTab(QWidget):
         self.barre.setEnabled(p is not None)
         if p is None:
             self.t0 = self.t1 = None
-        elif self.t0 is None or self.tout:
-            self.t0, self.t1 = p
-            self.tout = True
+        elif self.t0 is None or self.mode == 'tout':
+            if self.t0 is None:
+                self.mode = 'defaut'
+            self.t0, self.t1 = p if self.mode == 'tout' else self.m.periode_par_defaut(self.sid)
+        elif self.mode == 'defaut':
+            self.t0, self.t1 = self.m.periode_par_defaut(self.sid)
+        self.maj_recuperation()
         self._periode_changee()
 
     def vider_cache(self):
@@ -199,25 +240,45 @@ class SystemTab(QWidget):
 
     def showEvent(self, e):
         super().showEvent(e)
+        self.maj_recuperation()
         self._actualiser_visible()
 
+    def maj_recuperation(self):
+        """Ligne « Dernière récupération » et bandeau de rappel (d'après le moteur)."""
+        acc = self.m.acces(self.sid)
+        if acc and acc['derniere_recuperation']:
+            res = RESULTATS_RECUPERATION.get(acc['dernier_resultat'], acc['dernier_resultat'] or '')
+            self.ligne_recuperation.setText(f"Dernière récupération : {L.heure_locale(acc['derniere_recuperation'])}"
+                                            f" — {res}")
+        else:
+            self.ligne_recuperation.setText('Jamais récupéré')
+        texte = R.rappel_necessaire(self.m, self.sid)
+        self.texte_rappel.setText(texte or '')
+        self.rappel.setVisible(bool(texte))
+
     # ================================================================ période
-    def definir_periode(self, t0, t1, historique=True, tout=False):
+    def definir_periode(self, t0, t1, historique=True, mode=None):
+        """mode : 'defaut', 'tout' (périodes qui suivent les nouvelles données) ou None (choisie à la main)."""
         t0, t1 = int(t0), int(t1)
         if t1 <= t0:
             return
-        if (t0, t1) == (self.t0, self.t1) and tout == self.tout:
+        if (t0, t1) == (self.t0, self.t1) and mode == self.mode:
             return
         if historique and self.t0 is not None:
-            self.historique.append((self.t0, self.t1, self.tout))
+            self.historique.append((self.t0, self.t1, self.mode))
             del self.historique[:-HISTORIQUE_MAX]
-        self.t0, self.t1, self.tout = t0, t1, tout
+        self.t0, self.t1, self.mode = t0, t1, mode
         self._periode_changee()
 
     def periode_tout(self):
         p = self.m.periode(self.sid)
         if p:
-            self.definir_periode(p[0], p[1], tout=True)
+            self.definir_periode(p[0], p[1], mode='tout')
+
+    def periode_defaut(self):
+        p = self.m.periode_par_defaut(self.sid)
+        if p:
+            self.definir_periode(p[0], p[1], mode='defaut')
 
     def periode_derniere(self, d):
         p = self.m.periode(self.sid)
@@ -238,7 +299,7 @@ class SystemTab(QWidget):
 
     def retour(self):
         if self.historique:
-            self.t0, self.t1, self.tout = self.historique.pop()
+            self.t0, self.t1, self.mode = self.historique.pop()
             self._periode_changee()
 
     # ================================================================ calculs longs (thread + cache)

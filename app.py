@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.join(BASE, 'engine'))
 # ses dépendances. Les importer ici garantit qu'elles sont embarquées dans l'exécutable.
 import io, re, gzip, json, zlib, sqlite3, tarfile, zipfile, hashlib, datetime, threading, csv  # noqa: F401,E401
 import secrets, string, copy, zoneinfo, xml.etree.ElementTree  # noqa: F401,E401
+import base64, html, socket, ctypes, urllib.request, urllib.error, http.client  # noqa: F401,E401  (elpro_remote)
 import tzdata  # noqa: F401  (heure suisse sous Windows)
 
 from PySide6.QtGui import QIcon
@@ -31,6 +32,8 @@ def verifier(dossier):
 
     try:
         controle(L.ZONE is not None, 'fuseau Europe/Zurich disponible (tzdata)')
+        import elpro_remote as R
+        controle(R.retrouver_mdp(R.proteger_mdp('é-1')) == 'é-1', 'chiffrement du mot de passe de la centrale')
         controle(L.heure_locale(L.utc_depuis_texte('2026-10-15 11:44:10')) == '15.10.2026 13:44:10',
                  'heure d\'été suisse')
         controle(L.heure_locale(L.utc_depuis_texte('2026-10-26 11:44:10')) == '26.10.2026 12:44:10',

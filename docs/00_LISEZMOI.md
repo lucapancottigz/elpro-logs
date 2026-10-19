@@ -26,11 +26,12 @@ Elle sert à :
 | `03_Stockage.md` | Format de la base, emplacement, taille, sauvegarde | — |
 | `04_Recette.md` | Tests automatiques et checklist de validation | — |
 | `engine/elpro_logs.py` | Lecture des `.log`, base de données, calculs, journal, export CSV | **NON** |
+| `engine/elpro_remote.py` | Récupération des logs depuis la centrale (v1.1) | **NON** |
 | `engine/elpro_engine.py` | Copie du moteur d'ELPRO Config v1.8 (signification des registres) | **NON** |
 | `tools/make_demo_logs.py` | Génère des `.log` fictifs au format exact des radios | **NON** |
 | `examples/demo_site_A.json`, `demo_site_B.json` | Projets fictifs. `demo_site_B` contient un radar avec une échelle en cm | **NON** |
 | `examples/logs/*.log` | 3 jours de logs fictifs de `demo_site_B` (comprend une perte de comm, une coupure secteur, une détection, une commande, un passage de seuil radar, une batterie basse) | **NON** |
-| `tests/test_logs.py` | Tests automatiques du moteur (24 tests) | **NON** |
+| `tests/test_logs.py`, `tests/test_remote.py` | Tests automatiques du moteur (24 tests) et de la récupération (12 tests, v1.1) | **NON** |
 | `_reference_elpro_config/` | Copie des fichiers d'ELPRO Config (infrastructure à reprendre, voir `01_Architecture.md`) | À supprimer dans la PR |
 
 ## Règles de travail

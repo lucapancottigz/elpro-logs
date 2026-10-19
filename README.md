@@ -33,7 +33,8 @@
 
 - **Systèmes** : ajout une seule fois à partir du `.elpro.json` ; tous les systèmes se rouvrent au démarrage, un onglet par système.
 - **Import des logs** `.log` de la centrale (ainsi que `.zip` et `.csv`) : les valeurs sont gardées dans une base locale, les fichiers d'origine ne sont plus nécessaires. Un fichier déjà importé est reconnu ; un log d'une autre radio n'est importé qu'après confirmation.
-- **Période** en heure suisse (été/hiver) : tout, 24 h, 7 jours, 30 jours ou dates libres, avec retour à la période précédente.
+- **Récupération automatique** des logs depuis la centrale, à travers le tunnel WireGuard : un système ou tous à la fois ; seuls les fichiers nouveaux sont téléchargés. La centrale ne garde qu'environ une semaine de logs : un rappel s'affiche quand il est temps de récupérer.
+- **Période** en heure suisse (été/hiver) : à l'ouverture, la dernière semaine de données ; aussi tout, 24 h, 30 jours ou dates libres, avec retour à la période précédente.
 - **Vue globale** : chiffres clés, frise des états de chaque station et du système, tableau de synthèse (disponibilité de la communication, batteries, RSSI, coupures secteur, détections, commandes, radars).
 - **Détail** : graphiques par station et par type de donnée, axe des temps commun, curseur avec les valeurs à l'instant pointé, statistiques.
 - **Journal** des événements (pertes de communication, coupures secteur, détections, commandes, seuils radar, batteries basses, trous de données), avec filtres et export CSV.
@@ -60,6 +61,8 @@
 2. **Fichier › Importer des logs…** (`Ctrl+I`) › les 3 fichiers de `examples\logs\`.
 3. Vue globale : la perte de communication de B-SM2 le 01.10 apparaît en rouge sur la frise.
 4. Double-cliquer sur une station pour ouvrir ses graphiques dans l'onglet Détail.
+
+**Récupérer les logs d'une centrale** : activer le tunnel WireGuard, puis **Système › Connexion à la centrale…** (adresse de la centrale dans le tunnel, utilisateur, mot de passe → Tester la connexion → Enregistrer), puis **Récupérer les logs** (`Ctrl+R`). **Tout récupérer** (`Ctrl+Maj+R`) récupère toutes les centrales configurées. Récupérez au moins une fois par semaine : la centrale efface ses logs les plus anciens.
 
 Les exemples `demo_site_A` et `demo_site_B` sont des sites **fictifs** ; les logs d'exemple sont simulés.
 
@@ -88,7 +91,7 @@ py -3.11 -m venv venv
 
 | Commande | Rôle |
 |---|---|
-| `.\venv\Scripts\python.exe -m unittest discover -s tests -v` | Tests du moteur |
+| `.\venv\Scripts\python.exe -m unittest discover -s tests -v` | Tests du moteur et de la récupération |
 | `.\venv\Scripts\python.exe tests_ui\ui_acceptance.py` | Recette automatique de l'interface |
 | `.\build.bat` | Tests, exécutable, vérification, puis installateur dans `dist\` |
 

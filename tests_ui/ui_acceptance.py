@@ -22,6 +22,9 @@ import pyqtgraph as pg  # noqa: E402
 from ui import dialogs  # noqa: E402
 from ui.main_window import MainWindow  # noqa: E402
 from ui.workers import attendre_tous  # noqa: E402
+import elpro_remote as R  # noqa: E402
+sys.path.insert(0, os.path.join(RACINE, 'tests'))
+from test_remote import FausseCentrale  # noqa: E402
 from version import APP_VERSION  # noqa: E402
 
 sys.stdout.reconfigure(encoding='utf-8')
@@ -41,10 +44,30 @@ QMessageBox.warning = staticmethod(_msg('warning'))
 QMessageBox.critical = staticmethod(_msg('critical'))
 QMessageBox.information = staticmethod(_msg('information'))
 QMessageBox.question = staticmethod(_msg('question'))
+QMessageBox.exec = lambda self: MESSAGES.append(('box', self.windowTitle(), self.text())) or 0
 QFileDialog.getSaveFileName = staticmethod(lambda *a, **k: (REPONSES['fichier'], ''))
 QFileDialog.getOpenFileName = staticmethod(lambda *a, **k: (REPONSES['fichier'], ''))
 QInputDialog.getText = staticmethod(lambda *a, **k: ('Site B renommé', True))
-dialogs.RapportImport.exec = lambda self: RAPPORTS.append(self.lignes()) or 0
+RESUMES = []
+dialogs.RapportImport.exec = lambda self: RESUMES.append(self.resume.text()) or RAPPORTS.append(self.lignes()) or 0
+RAPPORTS_TOUT = []
+dialogs.RapportRecuperationTout.exec = lambda self: RAPPORTS_TOUT.append(self.lignes()) or 0
+CONNEXIONS = []          # saisies simulées du dialogue « Connexion à la centrale » : (adresse, utilisateur, mdp)
+
+
+def _connexion(self):
+    adresse, utilisateur, mdp = CONNEXIONS.pop(0)
+    self.adresse.setText(adresse)
+    self.utilisateur.setText(utilisateur)
+    self.mdp.setText(mdp)
+    self.enregistrer()
+    return self.result()
+
+
+dialogs.ConnexionCentrale.exec = _connexion
+PROGRESSION = []
+_avance = dialogs.ProgressionRecuperation._avance
+dialogs.ProgressionRecuperation._avance = lambda self, *a: PROGRESSION.append(a) or _avance(self, *a)
 dialogs.DateMiseEnService.exec = lambda self: 1
 dialogs.DateMiseEnService.valable_depuis = lambda self: REPONSES['date']
 
@@ -181,8 +204,13 @@ def main():
     verifier(fonds and all(it.foreground().color() == QColor('#202020') for it in fonds),
              'synthèse : texte foncé sur les cellules à fond coloré')
     tout = tab.periode
-    tab.periode_derniere(7 * 86400)
-    verifier(tab.periode == (tout[1] - 7 * 86400, tout[1]), 'période « 7 jours » depuis la fin des données')
+    verifier(tab.mode == 'defaut' and tout == f.magasin.periode(tab.sid),
+             'P2 période par défaut : 3 jours de démo entiers (moins d\'une semaine de données)')
+    tab.periode_derniere(86400)
+    verifier(tab.periode == (tout[1] - 86400, tout[1]) and tab.mode is None, 'période « 24 h » depuis la fin des données')
+    tab.periode_defaut()
+    verifier(tab.periode == tout and tab.mode == 'defaut', 'bouton « 7 jours » = période par défaut')
+    tab.definir_periode(tout[1] - 7 * 86400, tout[1])
     vg.frise.vue.zoom.emit(locale('01.10.2026 11:00:00'), locale('01.10.2026 15:00:00'))
     verifier(tab.periode == (locale('01.10.2026 11:00:00'), locale('01.10.2026 15:00:00')), 'G6 zoom par clic-glisser')
     verifier(tab.du.dateTime().toString('dd.MM.yyyy HH:mm:ss') == '01.10.2026 11:00:00', 'champ Du en heure suisse')
@@ -191,7 +219,7 @@ def main():
     tab.decaler(-1)
     verifier(tab.periode == (tout[1] - 14 * 86400, tout[1] - 7 * 86400), '◀ décale de la durée de la période')
     tab.periode_tout()
-    verifier(tab.periode == tout and tab.tout, 'bouton Tout')
+    verifier(tab.periode == tout and tab.mode == 'tout', 'bouton Tout')
 
     print('== Détail (D1–D8)')
     verifier(global_pret(tab), 'vue globale recalculée')
@@ -383,6 +411,96 @@ def main():
         x = it.getData()[0]
         ok = ok and len(x) > 0 and all(x[k] <= x[k + 1] for k in range(len(x) - 1)) and x[0] >= a and x[-1] <= b
     verifier(ok and xs, 'T5 courbes continues et ordonnées sur le changement d\'heure')
+    tab.periode_defaut()
+    fin = f.magasin.periode(tab.sid)[1]
+    verifier(tab.periode[1] == fin and L.heure_locale(tab.periode[0], '%a %H:%M:%S') == L.heure_locale(fin, '%a %H:%M:%S')
+             and tab.periode[1] - tab.periode[0] in (7 * 86400, 7 * 86400 + 3600),
+             f'P1 plus de 7 jours de données : dernière semaine, même jour et même heure ({L.heure_locale(tab.periode[0])})')
+
+    print('== Récupération depuis la centrale (v1.1)')
+    f.close()
+    f = fenetre('c.db')
+    f.ajouter_systeme(os.path.join(EX, 'demo_site_B.json'))
+    tab = f.onglet_actif()
+    verifier(tab.ligne_recuperation.text() == 'Jamais récupéré' and not f.action_tout_recuperer.isEnabled(),
+             '« Jamais récupéré », Tout récupérer grisé sans connexion')
+    contenus = {os.path.basename(c): open(c, 'rb').read() for c in LOGS}
+    noms = sorted(contenus)
+    fc = FausseCentrale({n: contenus[n] for n in noms[:2]})
+    CONNEXIONS.append((fc.adresse, 'user', 'secret'))
+    MESSAGES.clear()
+    f.recuperer_logs(tab)                    # pas encore de connexion : le dialogue s'ouvre d'abord
+    acc = f.magasin.acces(tab.sid)
+    verifier(acc and acc['adresse'] == fc.adresse and b'secret' not in acc['mdp'], 'connexion enregistrée, mot de passe chiffré')
+    verifier([x[1] for x in RAPPORTS[-1]] == ['Importé — 2880 lignes importées.'] * 2
+             and RESUMES[-1] == '2 fichier(s) importé(s) sur 2 nouveau(x).', 'récupération : 2 fichiers importés')
+    verifier(any(n == 1 and t == 2 for _s, n, t, _nom in PROGRESSION) and PROGRESSION[-1][1:3] == (2, 2),
+             'progression fichier par fichier')
+    verifier(tab.ligne_recuperation.text().startswith('Dernière récupération : ')
+             and tab.ligne_recuperation.text().endswith('— logs importés'), f'ligne grise : {tab.ligne_recuperation.text()}')
+    verifier(f.action_tout_recuperer.isEnabled(), 'Tout récupérer actif')
+    verifier(tab.rappel.isVisibleTo(tab) and 'rapidement' in tab.texte_rappel.text(), 'bandeau de rappel (données anciennes)')
+    f.recuperer_logs(tab)
+    verifier(MESSAGES[-1][0] == 'information' and MESSAGES[-1][2] == 'Aucun nouveau fichier sur la centrale.',
+             'W3 rien de nouveau')
+
+    d = dialogs.ConnexionCentrale(f, f.magasin, tab.sid, tab.nom)
+    verifier(d.adresse.text() == fc.adresse and d.mdp.placeholderText() == '(inchangé)' and not d.mdp.text(),
+             'dialogue : adresse conservée, mot de passe « (inchangé) »')
+    d.tester()
+    attendre(lambda: d.bouton_tester.isEnabled())
+    verifier(d.resultat.text() == 'Connecté à B-BASE (n° 99000000001)', f'W1 tester : {d.resultat.text()}')
+    d.mdp.setText('faux')
+    d.tester()
+    attendre(lambda: d.bouton_tester.isEnabled())
+    verifier(d.resultat.text().startswith('La centrale refuse'), 'W5 tester avec un mauvais mot de passe')
+
+    fc.mdp = 'autre'
+    MESSAGES.clear()
+    f.recuperer_logs(tab)
+    verifier(MESSAGES and MESSAGES[-1][0] == 'box' and MESSAGES[-1][2].startswith('La centrale refuse'),
+             'W5 accès refusé (+ bouton Connexion à la centrale)')
+    fc.mdp = 'secret'
+    adresse = fc.adresse
+    f.magasin.definir_acces(tab.sid, '127.0.0.1:1', 'user', acc['mdp'])
+    f.recuperer_logs(tab)
+    verifier(MESSAGES[-1][0] == 'critical' and 'WireGuard' in MESSAGES[-1][2], 'W4 centrale injoignable')
+    f.magasin.definir_acces(tab.sid, adresse, 'user', acc['mdp'])
+    fc.fichiers[noms[2]] = contenus[noms[2]]
+    fc.serie = '12345678901'
+    REPONSES['question'] = QMessageBox.No
+    n_avant = len(f.magasin.fichiers(tab.sid))
+    f.recuperer_logs(tab)
+    verifier(MESSAGES[-1][0] == 'question' and 'Importer quand même' in MESSAGES[-1][2]
+             and len(f.magasin.fichiers(tab.sid)) == n_avant, 'W6 autre centrale : Non → rien d\'importé')
+    REPONSES['question'] = QMessageBox.Yes
+    fc.serie = '99000000001'
+    exec_progression = dialogs.ProgressionRecuperation.exec
+    dialogs.ProgressionRecuperation.exec = lambda self: self.annuler() or exec_progression(self)
+    f.recuperer_logs(tab)
+    dialogs.ProgressionRecuperation.exec = exec_progression
+    verifier(MESSAGES[-1][0] == 'information' and MESSAGES[-1][2].startswith('Récupération arrêtée'),
+             'annulation de la récupération')
+    f.ajouter_systeme(os.path.join(EX, 'demo_site_A.json'))
+    tab_a = f.onglet_actif()
+    f.magasin.definir_acces(tab_a.sid, '', 'user', R.proteger_mdp('x'))
+    f.recuperer_logs(tab_a)
+    verifier(MESSAGES[-1][0] == 'box' and 'non renseignée' in MESSAGES[-1][2], 'connexion non configurée')
+    f.magasin.definir_acces(tab_a.sid, '127.0.0.1:1', 'user', R.proteger_mdp('x'))
+    f._maj_etat()
+    f.tout_recuperer()
+    lt = RAPPORTS_TOUT[-1]
+    verifier([(x[0], x[1], x[2]) for x in lt] == [('Demo Site B', 'Logs importés', '1'),
+                                                 ('Demo Site A', 'Centrale injoignable', '0')],
+             f'W6b Tout récupérer : une ligne par système {lt}')
+    verifier(f.onglet_de(tab.sid).bandeau.text().endswith('3 fichiers'), 'W6b onglets à jour après Tout récupérer')
+    fc.arreter()
+    f.close()
+    f = fenetre('c.db')
+    tab = f.onglet_de(1)
+    acc = f.magasin.acces(tab.sid)
+    verifier(acc['adresse'] == adresse and acc['utilisateur'] == 'user' and tab.mode == 'defaut',
+             'W7 connexion conservée au redémarrage, période par défaut')
 
     print('== Aide et À propos')
     a = dialogs.AideListeLog(f)
