@@ -28,8 +28,8 @@ Vues : frise d'état global, synthèse par station, détail par station, type de
 
 | Rôle | Responsabilité |
 |---|---|
-| **Luca** (Geoazimut, propriétaire) | Besoins, tests sous Windows et sur les vraies centrales (WireGuard), fusion des PR, releases. Il n'est pas à l'aise avec GitHub : il lui faut des **commandes PowerShell exactes, une par une**, avec le résultat attendu. |
-| **Ingénieur** (session Claude séparée) | Écrit et teste le **moteur** (`engine/`), les tests et les spécifications ; livre des **compléments** (zip + `COMPLEMENT_Vx.md`) et les procédures de test de Luca. |
+| **Le propriétaire** (Geoazimut) | Besoins, tests sous Windows et sur les vraies centrales (WireGuard), fusion des PR, releases. Les opérations GitHub (fusion, release) suivent une procédure écrite pas à pas : fournis toujours des commandes PowerShell exactes, une par une, avec le résultat attendu. |
+| **Ingénieur** (session Claude séparée) | Écrit et teste le **moteur** (`engine/`), les tests et les spécifications ; livre des **compléments** (zip + `COMPLEMENT_Vx.md`) et les procédures de test du propriétaire. |
 | **Programmeur** (toi) | Interface, intégration, `docs/`, empaquetage, **une PR par version** sur une branche `claude/...`. Tu n'as accès qu'à ce dépôt. |
 
 ---
@@ -115,13 +115,9 @@ elpro-logs/
 
 ## 7. Construire, tester, publier
 
-**Environnement Windows de Luca :** voir la passation d'ELPRO Config, c'est le même.
-- Les dépôts sont dans `Documents\Git\`.
-- `py` et `python` ne sont pas dans le PATH. Python 3.12 est dans `%LOCALAPPDATA%\Programs\Python\Python312\`.
-- Le venv existe déjà pour ce dépôt.
-- Le message `propagateSizeHints()` est sans gravité.
+**Environnement Windows de test :** Python peut ne pas être dans le PATH ; ne suppose pas l’existence de `py` et donne la commande complète de création du venv avec le chemin de `python.exe`. Le message Qt `propagateSizeHints()` pendant la recette est sans gravité.
 
-**Publication par Luca :** il suit une procédure `Test_ELPRO_Logs_x.y.md` fournie par l'ingénieur :
+**Publication par le propriétaire :** il suit une procédure `Test_ELPRO_Logs_x.y.md` fournie par l'ingénieur :
 1. `gh pr checkout N`, puis `.\build.bat` ;
 2. les tests sous Windows, avec une vraie centrale à travers WireGuard pour tout ce qui touche à la récupération ;
 3. `gh pr merge N --merge`, puis `main` et un nouveau `.\build.bat` ;
