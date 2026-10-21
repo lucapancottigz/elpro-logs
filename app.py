@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.join(BASE, 'engine'))
 
 # Le moteur est chargé depuis le dossier `engine/` à l'exécution : PyInstaller ne voit donc pas
 # ses dépendances. Les importer ici garantit qu'elles sont embarquées dans l'exécutable.
-import io, re, gzip, json, zlib, sqlite3, tarfile, zipfile, hashlib, datetime, threading, csv  # noqa: F401,E401
+import io, re, gzip, json, zlib, sqlite3, tarfile, zipfile, hashlib, datetime, threading, csv, contextlib  # noqa: F401,E401
 import secrets, string, copy, zoneinfo, xml.etree.ElementTree  # noqa: F401,E401
 import base64, html, socket, ctypes, urllib.request, urllib.error, http.client  # noqa: F401,E401  (elpro_remote)
 import tzdata  # noqa: F401  (heure suisse sous Windows)

@@ -417,6 +417,27 @@ def main():
              and tab.periode[1] - tab.periode[0] in (7 * 86400, 7 * 86400 + 3600),
              f'P1 plus de 7 jours de données : dernière semaine, même jour et même heure ({L.heure_locale(tab.periode[0])})')
 
+    print('== Import groupé (v1.2)')
+    f.close()
+    f = fenetre('l.db')
+    f.ajouter_systeme(os.path.join(EX, 'demo_site_B.json'))
+    tab = f.onglet_actif()
+    f.importer_logs(list(reversed(LOGS)))     # un seul lot, fichiers dans le désordre
+    verifier([x[1] for x in RAPPORTS[-1]] == ['Importé — 2880 lignes importées.'] * 3 and tab.periode == tout,
+             'V1 import groupé de 3 fichiers dans le désordre')
+    verifier(global_pret(tab) and segments_non_ok(tab.vue_globale.frise, 'B-SM2')
+             == [('01.10.2026 12:01:00', '01.10.2026 14:04:30', 'COMM_PERDUE')], 'V1 résultat identique (frise B-SM2)')
+    f.ajouter_systeme(os.path.join(EX, 'demo_site_A.json'))
+    tab_a = f.onglet_actif()
+    logs_a2 = G.generer(os.path.join(EX, 'demo_site_A.json'), os.path.join(TMP, 'logs_A2'), 2, serie='99000000002')
+    ecrire = L.Magasin._ecrire_blocs
+    L.Magasin._ecrire_blocs = lambda self, cur, lot: (_ for _ in ()).throw(OSError('disque plein'))
+    f.importer_logs(logs_a2)
+    L.Magasin._ecrire_blocs = ecrire
+    verifier(len(RAPPORTS[-1]) == 2 and all(x[1].startswith('Erreur — Import annulé, aucun fichier gardé') for x in RAPPORTS[-1])
+             and f.magasin.fichiers(tab_a.sid) == [] and f.magasin.periode(tab_a.sid) is None,
+             'lot impossible à écrire : chaque fichier en erreur, rien de gardé')
+
     print('== Récupération depuis la centrale (v1.1)')
     f.close()
     f = fenetre('c.db')
@@ -481,6 +502,16 @@ def main():
     dialogs.ProgressionRecuperation.exec = exec_progression
     verifier(MESSAGES[-1][0] == 'information' and MESSAGES[-1][2].startswith('Récupération arrêtée'),
              'annulation de la récupération')
+    suite = G.generer(os.path.join(EX, 'demo_site_B.json'), os.path.join(TMP, 'logs_suite'), 2, debut='2026-10-04 00:00:00')
+    for c in suite:
+        fc.fichiers[os.path.basename(c)] = open(c, 'rb').read()
+    fc.coupes.add(os.path.basename(suite[-1]))   # la centrale coupe en plein dernier fichier
+    MESSAGES.clear()
+    f.recuperer_logs(tab)
+    fc.coupes.clear()
+    verifier(MESSAGES and MESSAGES[-1][0] == 'critical' and 'Arrêt après 2 fichier(s) importé(s) sur 3' in MESSAGES[-1][2]
+             and len(f.magasin.fichiers(tab.sid)) == 4, 'V2 coupure en plein fichier : les 2 premiers sont gardés')
+    verifier(tab.ligne_recuperation.text().endswith('— centrale injoignable'), 'V2 ligne grise « centrale injoignable »')
     f.ajouter_systeme(os.path.join(EX, 'demo_site_A.json'))
     tab_a = f.onglet_actif()
     f.magasin.definir_acces(tab_a.sid, '', 'user', R.proteger_mdp('x'))
@@ -493,7 +524,7 @@ def main():
     verifier([(x[0], x[1], x[2]) for x in lt] == [('Demo Site B', 'Logs importés', '1'),
                                                  ('Demo Site A', 'Centrale injoignable', '0')],
              f'W6b Tout récupérer : une ligne par système {lt}')
-    verifier(f.onglet_de(tab.sid).bandeau.text().endswith('3 fichiers'), 'W6b onglets à jour après Tout récupérer')
+    verifier(f.onglet_de(tab.sid).bandeau.text().endswith('5 fichiers'), 'W6b onglets à jour après Tout récupérer')
     fc.arreter()
     f.close()
     f = fenetre('c.db')

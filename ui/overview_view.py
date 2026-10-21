@@ -269,7 +269,8 @@ def ligne_station(st):
     c = st.get('comm')
     if c:
         dispo = c['disponibilite_pct']
-        fond = ROUGE if dispo is not None and dispo < 95 else (ORANGE if dispo is not None and dispo < 99 else None)
+        fond = ROUGE if dispo is not None and dispo < L.DISPO_ROUGE else (
+            ORANGE if dispo is not None and dispo < L.DISPO_ORANGE else None)
         cel += [(f'{nombre(dispo)} %' if dispo is not None else '', {'couleur': fond, 'gras': bool(fond)}),
                 (str(c['nb_pertes']), {'gras': c['nb_pertes'] > 0}),
                 (duree(c['duree_pertes']), {}), (duree(c['plus_longue']), {})]

@@ -5,7 +5,7 @@
 ```
 .\venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
-Attendu : `Ran 36 tests … OK` (24 tests du moteur + 12 de la récupération, v1.1). À lancer dans `build.bat` avant l'empaquetage, comme pour ELPRO Config (arrêt si échec).
+Attendu : `Ran 40 tests … OK` (27 tests du moteur + 13 de la récupération, v1.2). À lancer dans `build.bat` avant l'empaquetage, comme pour ELPRO Config (arrêt si échec).
 
 ## 2. Jeu de démonstration
 
@@ -98,3 +98,15 @@ Sur Windows, avec la vraie centrale d'un site (tunnel WireGuard activé) — **n
 | P2 | Système avec 3 jours de démo | Période = les 3 jours entiers (R2 de 1.0 inchangé) | |
 | W7 | Fermer, relancer | Adresse et utilisateur conservés ; mot de passe non redemandé | |
 | W8 | `elpro_logs.db` ouvert avec un éditeur de texte | Le mot de passe n'apparaît pas en clair | |
+
+## 4. Imports groupés et coupures (v1.2)
+
+Automatique : `tests_ui\ui_acceptance.py` vérifie l'import groupé de 3 fichiers dans le désordre (même résultat), un lot impossible à écrire (chaque fichier en erreur, rien de gardé) et une récupération coupée en plein fichier (`fc.coupes`, les fichiers précédents sont gardés).
+
+Sur Windows :
+
+| # | Contrôle | Attendu | OK |
+|---|---|---|---|
+| V1 | Importer à la main une vingtaine de `.log` d'un coup | Nettement plus rapide qu'en 1.1 ; résultat identique | |
+| V2 | Pendant une récupération, couper le tunnel WireGuard | « Centrale injoignable … Arrêt après k fichier(s) … » ; les k fichiers sont dans l'onglet Fichiers ; relancer le tunnel puis Récupérer : la suite arrive | |
+| V3 | Tout récupérer avec une centrale injoignable en premier | Les centrales suivantes sont récupérées ; une ligne de rapport par système | |

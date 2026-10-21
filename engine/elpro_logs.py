@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2026 Geoazimut SàRL (https://geoazimut.com). Tous droits réservés.
 """
-Moteur ELPRO Logs (v1.1) — IMPLÉMENTATION DE RÉFÉRENCE.
+Moteur ELPRO Logs (v1.2) — IMPLÉMENTATION DE RÉFÉRENCE.
 
 Rôle :
   1. lire les fichiers de log (DataLog) des centrales ELPRO 415U-2-C4 ;
@@ -25,7 +25,7 @@ Stockage : SQLite (un seul fichier pour tous les systèmes).
 Python 3.10+, bibliothèque standard uniquement (+ elpro_engine.py, copie de ELPRO Config).
 Toutes les heures manipulées par le moteur sont des secondes UTC (epoch, entiers).
 """
-import os, io, re, gzip, json, zlib, sqlite3, tarfile, zipfile, hashlib, datetime, threading
+import os, io, re, gzip, json, zlib, sqlite3, tarfile, zipfile, hashlib, datetime, threading, contextlib
 
 import elpro_engine as M
 
@@ -96,6 +96,8 @@ FAIL_FAMILLES = (('152', 'FAIL_BATTV'), ('153', 'FAIL_RSSI'), ('154', 'FAIL_DET'
 BATTV_BAS = 11.5        # V, même seuil que le tableau de bord radio
 BATTV_HAUT = 14.5
 RSSI_FAIBLE = -95       # dBm
+DISPO_ORANGE = 99       # % de disponibilité de la communication : en dessous -> orange
+DISPO_ROUGE = 95        # en dessous -> rouge
 
 # États de la vue globale, du plus grave au moins grave (l'ordre sert de priorité)
 ETATS = ['SANS_DONNEES', 'COMM_PERDUE', 'DEGRADE', 'ALERTE', 'OK']
@@ -108,6 +110,12 @@ LIBELLES_ETATS = {
 }
 COULEURS_ETATS = {'SANS_DONNEES': '#B0B0B0', 'COMM_PERDUE': '#D32F2F', 'DEGRADE': '#F57C00',
                   'ALERTE': '#FBC02D', 'OK': '#388E3C'}
+
+
+def _batterie_basse(brut):
+    """Même règle partout (frise, journal, synthèse) : tension lue < BATTV_BAS. 0,00 V est bien « basse »."""
+    v = battv_volts(brut)
+    return v is not None and v < BATTV_BAS
 
 
 def battv_volts(brut):
@@ -184,31 +192,6 @@ def utc_depuis_locale(annee, mois, jour, h=0, mi=0, s=0):
     """Date/heure suisse -> seconde UTC (pour les sélecteurs de période)."""
     d = datetime.datetime(annee, mois, jour, h, mi, s, tzinfo=ZONE or datetime.timezone.utc)
     return int(d.timestamp())
-
-
-JOURS_DEFAUT = 6           # période affichée par défaut : 6 jours en arrière + le jour actuel
-
-
-def periode_defaut(maintenant_utc=None, jours=JOURS_DEFAUT):
-    """(t0, t1) : de 00:00 (heure suisse) il y a `jours` jours jusqu'à maintenant."""
-    t1 = maintenant_utc if maintenant_utc is not None else int(datetime.datetime.now(datetime.timezone.utc).timestamp())
-    d = datetime.datetime.fromtimestamp(t1, datetime.timezone.utc)
-    if ZONE:
-        d = d.astimezone(ZONE)
-    j = d.date() - datetime.timedelta(days=jours)
-    return utc_depuis_locale(j.year, j.month, j.day), t1
-
-
-JOURS_DEFAUT = 6           # période par défaut : le jour actuel + 6 jours en arrière
-
-
-def debut_jour_local(t, decalage_jours=0):
-    """Minuit (heure suisse) du jour de t, décalé de `decalage_jours` jours -> seconde UTC."""
-    d = datetime.datetime.fromtimestamp(t, datetime.timezone.utc)
-    if ZONE:
-        d = d.astimezone(ZONE)
-    j = d.date() + datetime.timedelta(days=decalage_jours)
-    return utc_depuis_locale(j.year, j.month, j.day)
 
 
 def reculer_jours(t, jours):
@@ -554,6 +537,8 @@ def debut_mois(m):
 
 
 def _varint(n, out):
+    if n < 0:
+        raise ValueError('Points non triés dans un bloc.')
     while True:
         b = n & 0x7F
         n >>= 7
@@ -634,6 +619,7 @@ class Magasin:
             raise RuntimeError('Cette base a été créée par une version plus récente d\'ELPRO Logs.')
         self._cache_cat = {}
         self._cache_blocs = {}
+        self._lot = None
 
     def fermer(self):
         self.cx.close()
@@ -834,7 +820,7 @@ class Magasin:
                           (sid, lg['nom'], lg['empreinte'], lg['serie'], ts[0], ts[-1] + pas, pas,
                            len(ts), len(gardees), maintenant())).lastrowid
         if not gardees:
-            self.cx.commit()
+            self._valider()
             return dict(rap, statut='deja_couvert', message='Toutes les lignes étaient déjà importées.',
                         t_debut=ts[0], t_fin=ts[-1] + pas)
         # plages continues : écart > 1,5 pas = trou
@@ -863,7 +849,7 @@ class Magasin:
         cur.executemany('INSERT OR REPLACE INTO couverture VALUES (?,?,?,?)', [(sid, a, b, fid) for a, b in plages])
         if lg['serie'] and (not serie_sys or forcer_serie):
             cur.execute('UPDATE systemes SET serie=? WHERE id=?', (lg['serie'], sid))
-        self.cx.commit()
+        self._valider()
         self._cache_cat.clear()
         self._cache_blocs.clear()
         if len(gardees) < len(ts):
@@ -871,18 +857,52 @@ class Magasin:
         return dict(rap, statut='importe', message=f'{len(gardees)} lignes importées.',
                     t_debut=gardees[0][0], t_fin=gardees[-1][0] + pas, nb_points=len(lots))
 
+    # ---------------------------------------------------------------- import groupé (v1.2)
+    @contextlib.contextmanager
+    def lot(self):
+        """Regroupe plusieurs imports : chaque bloc (registre, mois) n'est décompressé et réécrit qu'UNE fois
+        pour tout le lot, et le lot entier est une seule transaction (tout ou rien en cas de plantage).
+        Usage : with m.lot(): for f in fichiers: m.importer_fichier(sid, f)
+        Sans lot, une récupération hebdomadaire en fin de mois réécrivait chaque bloc ~160 fois."""
+        if self._lot is not None:            # lot déjà ouvert : on s'y joint
+            yield self
+            return
+        self._lot = {}
+        try:
+            yield self
+            lot, self._lot = self._lot, None
+            self._ecrire_blocs(self.cx.cursor(), lot)
+            self.cx.commit()
+        except BaseException:
+            self._lot = None
+            self.cx.rollback()
+            raise
+        finally:
+            self._cache_cat.clear()
+            self._cache_blocs.clear()
+
+    def _valider(self):
+        if self._lot is None:
+            self.cx.commit()
+
     def _ecrire_points(self, cur, sid, lots):
-        """Fusionne les nouveaux points (registre, t, v) dans les blocs mensuels."""
+        """Fusionne les nouveaux points (registre, t, v) dans les blocs mensuels (ou les garde pour la fin du lot)."""
         par_bloc = {}
         for r, t, v in lots:
-            par_bloc.setdefault((r, mois_de(t)), []).append((t, v))
-        for (r, m), pts in par_bloc.items():
+            par_bloc.setdefault((sid, r, mois_de(t)), []).append((t, v))
+        if self._lot is not None:
+            for k, pts in par_bloc.items():
+                self._lot.setdefault(k, []).extend(pts)
+            return
+        self._ecrire_blocs(cur, par_bloc)
+
+    def _ecrire_blocs(self, cur, par_bloc):
+        for (sid, r, m), pts in par_bloc.items():
             ex = cur.execute('SELECT donnees FROM blocs WHERE systeme_id=? AND registre=? AND mois=?',
                              (sid, r, m)).fetchone()
-            if ex:
-                d = dict(decoder_bloc(ex[0], m))
-                d.update(pts)
-                pts = sorted(d.items())
+            d = dict(decoder_bloc(ex[0], m)) if ex else {}
+            d.update(pts)
+            pts = sorted(d.items())                  # toujours trié : un lot mélange des fichiers dans le désordre
             cur.execute('INSERT OR REPLACE INTO blocs VALUES (?,?,?,?,?)', (sid, r, m, len(pts), coder_bloc(pts, m)))
 
     def _bloc(self, sid, r, m):
@@ -921,25 +941,6 @@ class Magasin:
         self.cx.execute('VACUUM')
 
     # ---------------------------------------------------------------- lecture
-    def periode_defaut(self, sid, maintenant=None, jours=JOURS_DEFAUT):
-        """Période affichée à l'ouverture : le jour actuel + les `jours` jours précédents (jours entiers,
-        heure suisse), jusqu'à la fin des données.
-        - Données plus courtes que la fenêtre : la période commence au début des données.
-        - Pas de données dans la fenêtre (logs anciens) : même fenêtre, mais calée sur le dernier jour de données.
-        - Aucune donnée : None."""
-        p = self.periode(sid)
-        if not p:
-            return None
-        maintenant = maintenant or self._maintenant()
-        t0 = debut_jour_local(maintenant, -jours)
-        if p[1] <= t0:                                   # rien dans la fenêtre : on se cale sur les données
-            t0 = debut_jour_local(p[1] - 1, -jours)
-        return (max(t0, p[0]), p[1])
-
-    @staticmethod
-    def _maintenant():
-        return maintenant()
-
     def periode(self, sid):
         r = self.cx.execute('SELECT MIN(debut), MAX(fin) FROM couverture WHERE systeme_id=?', (sid,)).fetchone()
         return None if r[0] is None else (r[0], r[1])
@@ -1034,7 +1035,7 @@ class Magasin:
                     segs = self.segments(sid, c['registre'], t0, t1, cov)
                     # réduit d'abord chaque canal à « en défaut ou non » : beaucoup moins de segments
                     if g == 'BATTV':
-                        segs = compacter([(x, y, (battv_volts(v) or 99) < BATTV_BAS) for x, y, v in segs])
+                        segs = compacter([(x, y, _batterie_basse(v)) for x, y, v in segs])
                     elif g == 'MAINV':
                         segs = compacter([(x, y, v == 0) for x, y, v in segs])
                     else:
@@ -1060,9 +1061,10 @@ class Magasin:
             res.append({'station': S['nom'], 'role': S['role'], 'segments': segs})
         return res
 
-    def etat_systeme(self, sid, t0, t1):
-        """Bande « système » : l'état le plus grave de toutes les stations."""
-        st = self.etat_stations(sid, t0, t1)
+    def etat_systeme(self, sid, t0, t1, stations=None):
+        """Bande « système » : l'état le plus grave de toutes les stations.
+        stations : résultat de etat_stations(sid, t0, t1) déjà calculé (évite de tout recalculer)."""
+        st = stations if stations is not None else self.etat_stations(sid, t0, t1)
         return combiner([s['segments'] for s in st],
                         lambda vs: min((v for v in vs if v), key=ETATS.index, default='SANS_DONNEES'), t0, t1)
 
