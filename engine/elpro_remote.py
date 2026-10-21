@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2026 Geoazimut SàRL (https://geoazimut.com). Tous droits réservés.
 """
-Récupération automatique des logs d'une centrale ELPRO 415U-2-C4 (v1.1) — IMPLÉMENTATION DE RÉFÉRENCE.
+Récupération automatique des logs d'une centrale ELPRO 415U-2-C4 (v1.2) — IMPLÉMENTATION DE RÉFÉRENCE.
 
 Constaté sur radio (firmware 2.59) :
   - authentification HTTP du navigateur (fenêtre « Ce site vous demande de vous connecter ») ;
@@ -17,7 +17,7 @@ saisie ne doit jamais faire importer les logs d'un autre site.
 
 Python 3.10+, bibliothèque standard uniquement.
 """
-import re, sys, base64, datetime, urllib.request, urllib.error, socket, html
+import re, sys, base64, datetime, urllib.request, urllib.error, socket, html, http.client
 
 import elpro_logs as L
 
@@ -110,7 +110,8 @@ class Session:
             if e.code == 404:
                 raise ErreurCentrale('introuvable', f'Page introuvable sur la centrale : {chemin}')
             raise ErreurCentrale('erreur', f'Erreur HTTP {e.code} sur {chemin}.')
-        except (urllib.error.URLError, socket.timeout, TimeoutError, ConnectionError, OSError) as e:
+        except (urllib.error.URLError, socket.timeout, TimeoutError, ConnectionError, OSError,
+                http.client.HTTPException) as e:          # HTTPException : coupure en plein téléchargement
             raise ErreurCentrale('injoignable',
                                  f'Centrale injoignable à l\'adresse {self.adresse}. '
                                  f'Le tunnel WireGuard est-il activé ? ({getattr(e, "reason", e)})')
@@ -194,19 +195,33 @@ def recuperer(magasin, sid, forcer=False, progression=None, annuler=None, sessio
         deja = magasin.noms_fichiers(sid)
         nouveaux = [n for n in noms if n not in deja]
         rap['nouveaux'] = len(nouveaux)
-        # 3. téléchargement + import, du plus ancien au plus récent
-        for k, nom in enumerate(nouveaux):
-            if annuler and annuler():
-                rap.update(statut='annule', message=f'Récupération arrêtée après {k} fichier(s).')
-                return _fin(magasin, sid, rap)
-            if progression:
-                progression(k, len(nouveaux), nom)
-            octets = session.telecharger(nom)
-            imp = magasin.importer_octets(sid, octets, nom, forcer_serie=forcer)
-            rap['imports'] += imp
-            if any(r['statut'] == 'serie_differente' for r in imp):
-                rap.update(statut='mauvaise_centrale', message=imp[0]['message'])
-                return _fin(magasin, sid, rap)
+        # 3. téléchargement + import, du plus ancien au plus récent, en un seul lot (v1.2) :
+        #    rapide (chaque bloc réécrit une fois) ; ce qui est importé avant une coupure est gardé.
+        coupure = None
+        with magasin.lot():
+            for k, nom in enumerate(nouveaux):
+                if annuler and annuler():
+                    rap.update(statut='annule', message=f'Récupération arrêtée après {k} fichier(s).')
+                    break
+                if progression:
+                    progression(k, len(nouveaux), nom)
+                try:
+                    octets = session.telecharger(nom)
+                except ErreurCentrale as e:
+                    coupure = (e, k)
+                    break
+                imp = magasin.importer_octets(sid, octets, nom, forcer_serie=forcer)
+                rap['imports'] += imp
+                if any(r['statut'] == 'serie_differente' for r in imp):
+                    rap.update(statut='mauvaise_centrale', message=imp[0]['message'])
+                    break
+        if rap['statut'] in ('annule', 'mauvaise_centrale'):
+            return _fin(magasin, sid, rap)
+        if coupure:
+            e, k = coupure
+            rap.update(statut=e.code, message=f'{e.message} Arrêt après {k} fichier(s) importé(s) sur '
+                                              f'{len(nouveaux)} ; relancez la récupération pour la suite.')
+            return _fin(magasin, sid, rap)
         if progression:
             progression(len(nouveaux), len(nouveaux), '')
         nb_ok = sum(1 for r in rap['imports'] if r['statut'] == 'importe')
@@ -244,7 +259,16 @@ def recuperer_tout(magasin, progression=None, annuler=None):
         if annuler and annuler():
             break
         p = (lambda n, t, nom, nm=S['nom']: progression(nm, n, t, nom)) if progression else None
-        res.append((S, recuperer(magasin, S['id'], progression=p, annuler=annuler)))
+        try:
+            r = recuperer(magasin, S['id'], progression=p, annuler=annuler)
+        except Exception as e:                          # une centrale en erreur n'arrête jamais la tournée
+            r = {'statut': 'erreur', 'message': f'Erreur inattendue : {e}', 'centrale': None, 'disponibles': 0,
+                 'nouveaux': 0, 'imports': [], 'plus_ancien': None, 'alerte': None}
+            try:
+                magasin.noter_recuperation(S['id'], L.maintenant(), 'erreur')
+            except Exception:
+                pass
+        res.append((S, r))
     return res
 
 

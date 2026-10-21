@@ -83,6 +83,8 @@ m.profil(sid)
 m.importer_fichier(sid, chemin, forcer_serie=False, progression=callback(n, total))
     # -> [rapport] ; rapport : fichier, statut, message, avertissements, (t_debut, t_fin)
     # statut : importe | deja_importe | deja_couvert | vide | erreur | serie_differente
+with m.lot():                    # imports groupés (v1.2) : chaque bloc réécrit une fois, une seule transaction
+    for chemin in chemins: m.importer_fichier(sid, chemin)    # (tout ou rien si le lot échoue)
 m.fichiers(sid)
 
 # --- lecture (toutes les heures en secondes UTC)
@@ -91,7 +93,7 @@ m.catalogue(sid, t)              # stations -> canaux (config en vigueur à t) +
 m.versions_dans_periode(sid, t0, t1)
 m.couverture(sid, t0, t1); m.trous(sid, t0, t1)
 m.etat_stations(sid, t0, t1)     # [{station, role, segments:[(a, b, ETAT)]}]
-m.etat_systeme(sid, t0, t1)      # [(a, b, ETAT)] pire état toutes stations
+m.etat_systeme(sid, t0, t1, stations=st)    # [(a, b, ETAT)] pire état ; st = etat_stations déjà calculé
 L.Magasin.par_cases(segments, t0, t1, n)     # réduction à n cases (affichage longue période)
 m.synthese(sid, t0, t1)          # chiffres clés (voir 02_Ecrans.md)
 m.courbe(sid, canal, t0, t1, n_max=2000)     # (xs, ys) en escalier ; None = pas de données
@@ -101,7 +103,7 @@ m.exporter_csv(sid, canaux, t0, t1, chemin)
 
 # --- constantes et aides d'affichage
 L.ETATS, L.LIBELLES_ETATS, L.COULEURS_ETATS, L.FAMILLES, L.GENRES
-L.BATTV_BAS, L.RSSI_FAIBLE, L.LISTE_STANDARD, L.REGLAGES_STANDARD
+L.BATTV_BAS, L.RSSI_FAIBLE, L.DISPO_ROUGE, L.DISPO_ORANGE, L.LISTE_STANDARD, L.REGLAGES_STANDARD
 L.heure_locale(t, fmt), L.utc_depuis_locale(a, m, j, h, mi, s), L.duree_texte(s)
 ```
 
@@ -115,7 +117,7 @@ Un **canal** est un `dict` : `registre`, `nom`, `libelle`, `genre`, `famille`, `
 
 ## Threads
 
-- **Import** : dans un `QThread`, avec **sa propre instance** `L.Magasin(chemin)` (une connexion SQLite ne se partage pas entre threads). Progression par signal. Fermer l'instance à la fin, puis rafraîchir l'onglet.
+- **Import** : dans un `QThread`, avec **sa propre instance** `L.Magasin(chemin)` (une connexion SQLite ne se partage pas entre threads), tous les fichiers dans un seul `with m.lot():` (v1.2). Progression par signal. Annuler = sortir de la boucle (ce qui est importé est gardé). Fermer l'instance à la fin, puis rafraîchir l'onglet.
 - **Calculs** `etat_stations`, `synthese`, `evenements` : rapides sur un mois (< 0,5 s) mais quelques secondes sur une année. Les lancer dans un `QThread` (instance `Magasin` dédiée) avec un indicateur « Calcul en cours… » ; garder en cache le dernier résultat par (système, t0, t1).
 - Courbes du Détail : `m.courbe()` est rapide (< 0,1 s par canal sur un an) ; appel direct possible.
 

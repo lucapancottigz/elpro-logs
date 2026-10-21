@@ -17,7 +17,7 @@ Vues : frise d'état global, synthèse par station, détail par station, type de
 | Élément | Valeur |
 |---|---|
 | Dépôt | `lucapancottigz/elpro-logs` (**public**) |
-| Dernière version | **1.1.0** (moteur `elpro_logs` v1.1 + `elpro_remote`) |
+| Dernière version | **1.2.0** (moteur `elpro_logs` v1.2 + `elpro_remote` v1.2) |
 | Langage / interface | Python 3.11+ / PySide6 / **pyqtgraph** (pas QtCharts, pour une question de licence) / tzdata |
 | Distribution | Installateur Inno Setup (`AppId` propre, différent de celui d'ELPRO Config) dans les Releases GitHub |
 | Licence | Propriétaire : « © 2026 Geoazimut SàRL. Tous droits réservés. », geoazimut.com |
@@ -40,7 +40,7 @@ Vues : frise d'état global, synthèse par station, détail par station, type de
 2. **Aucune règle métier dans l'interface** : pas de conversion de tension, de seuil, d'état ou de durée. Libellés, unités, couleurs d'état et seuils viennent de `elpro_logs`.
 3. **Aucune donnée réelle dans le dépôt**, qui est public : pas de `.elpro.json` ou de `.log` de site, pas de base `.db`, pas de nom de site, d'adresse WireGuard ni de n° de série réel. `.gitignore` contient `*.db`, `*.db-wal` et `*.db-shm`.
 4. Noms de fichiers de code en anglais ; commentaires, documentation et interface en français.
-5. Avant toute livraison : **`Ran 36 tests … OK`** (`tests/`), plus la recette de l'interface (`tests_ui/`) : `Recette interface : OK`. `build.bat` vérifie aussi l'exécutable (`app.py --verifier`).
+5. Avant toute livraison : **`Ran 40 tests … OK`** (`tests/`), plus la recette de l'interface (`tests_ui/`) : `Recette interface : OK`. `build.bat` vérifie aussi l'exécutable (`app.py --verifier`).
 6. Ne change pas l'`AppId` ni `AppPublisher` de l'installateur. AppUserModelID : `GeoAzimut.ELPROLogs`.
 
 ---
@@ -55,10 +55,10 @@ elpro-logs/
 ├─ engine/
 │  ├─ elpro_logs.py     ← lecture des .log, base SQLite, calculs, journal, export CSV, période par défaut
 │  ├─ elpro_remote.py   ← récupération HTTP sur la centrale, mot de passe chiffré (DPAPI)
-│  └─ elpro_engine.py   ← COPIE du moteur d'ELPRO Config (v1.8) : signification des registres
+│  └─ elpro_engine.py   ← COPIE du moteur d'ELPRO Config (v1.9) : signification des registres
 ├─ tools/make_demo_logs.py  ← génère des .log fictifs au format exact de la radio
 ├─ examples/            ← demo_site_A/B.json (fictifs ; B a un radar en cm) + logs/ (3 jours de B)
-├─ tests/               ← test_logs.py (24) + test_remote.py (12, avec une fausse centrale HTTP)
+├─ tests/               ← test_logs.py (27) + test_remote.py (13, avec une fausse centrale HTTP)
 ├─ tests_ui/            ← recette automatique de l'interface
 ├─ installer/           ← elpro_logs.iss + génération de la ressource de version
 └─ docs/                ← 00_LISEZMOI, 01_Architecture, 02_Ecrans, 03_Stockage, 04_Recette
@@ -136,22 +136,22 @@ elpro-logs/
 | 1.0.0 | Systèmes, import des logs, base compacte, vue globale, détail, journal, fichiers, export CSV, installateur |
 | 1.0.0 (corrections avant publication) | Bulle de la frise stable ; texte lisible sur fond coloré en thème sombre Windows |
 | 1.1.0 | Connexion à la centrale, Récupérer les logs, Tout récupérer, rappel après 5 jours, période par défaut d'une semaine |
+| 1.2.0 | Corrections de la relecture : coupure en plein téléchargement, batterie à 0 V, imports groupés (`m.lot()`), seuils de disponibilité dans le moteur ; code mort retiré ; ELPRO Config v1.9 |
 
 ---
 
 ## 9. Dette connue et chantiers ouverts
 
-1. **Code mort dans `engine/elpro_logs.py`** : `JOURS_DEFAUT` est défini deux fois, et `periode_defaut()` (la fonction et la méthode), `debut_jour_local()` ainsi que leurs tests ne servent pas. C'est une autre version de la période par défaut, livrée par erreur et non utilisée. **L'ingénieur la retirera dans la prochaine mise à jour du moteur** : n'y touche pas toi-même.
-2. **Conservation des logs sur la centrale** : environ 160 fichiers, à confirmer. Selon le résultat, le seuil du rappel (`RETENTION_JOURS` dans `elpro_remote.py`) pourra être ajusté par l'ingénieur.
-3. **Anciennes listes de log** : les fichiers produits avant la liste standard s'importent, mais leur colonne MAINV unique est ignorée. Il est possible de les rattacher avec Système › Liste de log (XML).
-4. **Liens avec ELPRO Config** : si ELPRO Config génère un jour directement le XML des radios, avec le DataLog activé automatiquement, aucune modification ne sera nécessaire ici tant que la liste standard reste la même.
+1. **Conservation des logs sur la centrale** : environ 160 fichiers, à confirmer. Selon le résultat, le seuil du rappel (`RETENTION_JOURS` dans `elpro_remote.py`) pourra être ajusté par l'ingénieur.
+2. **Anciennes listes de log** : les fichiers produits avant la liste standard s'importent, mais leur colonne MAINV unique est ignorée. Il est possible de les rattacher avec Système › Liste de log (XML).
+3. **Liens avec ELPRO Config** : si ELPRO Config génère un jour directement le XML des radios, avec le DataLog activé automatiquement, aucune modification ne sera nécessaire ici tant que la liste standard reste la même.
 
 ---
 
 ## 10. Pour démarrer
 
 1. Clone le dépôt et lis `docs/00` à `docs/04`, le `CHANGELOG.md` et ce document.
-2. Crée le venv et lance les tests : `Ran 36 tests … OK`, puis la recette de l'interface : `Recette interface : OK`.
+2. Crée le venv et lance les tests : `Ran 40 tests … OK`, puis la recette de l'interface : `Recette interface : OK`.
 3. Lance l'application :
    - ajoute `examples/demo_site_B.json` ;
    - importe `examples/logs/*.log` ;

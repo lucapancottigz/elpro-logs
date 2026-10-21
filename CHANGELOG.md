@@ -2,6 +2,22 @@
 
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation [SemVer](https://semver.org/lang/fr/).
 
+## [1.2.0] — 2026-10-21
+
+### Corrigé
+- Coupure en plein téléchargement (centrale ou tunnel qui coupe) : la récupération s'arrête proprement avec « Centrale injoignable … Arrêt après k fichier(s) importé(s) sur n ; relancez la récupération pour la suite. ». Les fichiers importés avant la coupure sont gardés. **Tout récupérer** continue avec les centrales suivantes au lieu de s'arrêter avec un rapport vide, et la date de récupération est toujours notée.
+- Une batterie lue à 0,00 V apparaissait verte sur la frise alors que le journal et la synthèse la signalaient basse : une seule règle partout.
+
+### Amélioré
+- Import de plusieurs fichiers (à la main ou depuis la centrale) en un seul lot : chaque bloc de la base n'est réécrit qu'une fois. Une récupération hebdomadaire en fin de mois passe d'environ 56 s à 3 s sur le site de démo. Le lot est tout ou rien : si son écriture échoue, aucun fichier n'est gardé et chaque fichier est signalé en erreur.
+- Vue globale : l'état des stations n'est plus calculé deux fois.
+
+### Interne
+- Seuils de disponibilité de la communication (95 / 99 %) lus dans le moteur (`L.DISPO_ROUGE`, `L.DISPO_ORANGE`).
+- Code mort de l'ancienne période par défaut retiré du moteur.
+- Copie du moteur d'ELPRO Config mise à jour en v1.9.
+- 40 tests automatiques ; recette de l'interface : import groupé, lot impossible à écrire, récupération coupée en plein fichier.
+
 ## [1.1.0] — 2026-10-19
 
 ### Ajouté

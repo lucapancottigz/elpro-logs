@@ -346,7 +346,7 @@ class SystemTab(QWidget):
         """États des stations, état du système et synthèse de la période (Vue globale et Détail)."""
         def calcul(m, t0, t1):
             st = m.etat_stations(self.sid, t0, t1)
-            return {'stations': st, 'systeme': m.etat_systeme(self.sid, t0, t1),
+            return {'stations': st, 'systeme': m.etat_systeme(self.sid, t0, t1, stations=st),
                     'synthese': m.synthese(self.sid, t0, t1)}
         self.demander('global', calcul, rappel, echec=echec)
 

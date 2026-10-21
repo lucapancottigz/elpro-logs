@@ -279,5 +279,43 @@ class TestHeure(unittest.TestCase):
         self.assertEqual(L.duree_texte(90061), '1 j 1 h 01 min')
 
 
+
+class TestV12(Base):
+    """Moteur v1.2 : corrections de la relecture."""
+
+    def test_batterie_0V_basse_partout(self):
+        self.assertTrue(L._batterie_basse(8192))            # 0,00 V
+        self.assertTrue(L._batterie_basse(8195))
+        self.assertFalse(L._batterie_basse(None))            # jamais lue : pas de valeur, pas d'alerte
+        self.assertFalse(L._batterie_basse(8192 + int(12.5 / 40 * 40960)))
+        self.assertLess(L.DISPO_ROUGE, L.DISPO_ORANGE)
+
+    def test_etat_systeme_reutilise_les_stations(self):
+        m, sid = self.nouveau('v12a.db')
+        m.importer_fichier(sid, self.logs[0])
+        t0, t1 = m.periode(sid)
+        st = m.etat_stations(sid, t0, t1)
+        self.assertEqual(m.etat_systeme(sid, t0, t1, stations=st), m.etat_systeme(sid, t0, t1))
+
+    def test_lot_identique_et_tout_ou_rien(self):
+        m1, s1 = self.nouveau('v12b.db')
+        for p in self.logs:
+            m1.importer_fichier(s1, p)
+        m2, s2 = self.nouveau('v12c.db')
+        with m2.lot():
+            for p in reversed(self.logs):
+                m2.importer_fichier(s2, p)
+        t0, t1 = m1.periode(s1)
+        self.assertEqual((t0, t1), m2.periode(s2))
+        for c in m1.catalogue(s1)['stations'][2]['canaux']:
+            self.assertEqual(m1.segments(s1, c['registre'], t0, t1), m2.segments(s2, c['registre'], t0, t1))
+        m3, s3 = self.nouveau('v12d.db')
+        with self.assertRaises(RuntimeError):
+            with m3.lot():
+                m3.importer_fichier(s3, self.logs[0])
+                raise RuntimeError('plantage')
+        self.assertIsNone(m3.periode(s3))                     # rien n'a été gardé
+        self.assertEqual(m3.fichiers(s3), [])
+
 if __name__ == '__main__':
     unittest.main()

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2026 Geoazimut SàRL (https://geoazimut.com). Tous droits réservés.
 """
-Moteur de génération ELPRO GeoAzimut (v1.8) — IMPLÉMENTATION DE RÉFÉRENCE.
+Moteur de génération ELPRO GeoAzimut (v1.9) — IMPLÉMENTATION DE RÉFÉRENCE.
 
 Entrée  : un projet (dict, format décrit dans 03_Modele_de_donnees.md).
 Sorties : - plan (dict)            -> utilisé par la page 2, le PDF et l'Excel
@@ -189,8 +189,11 @@ def classer_modification(ancien, nouveau):
     """Compare deux projets. Retourne 'majeure', 'mineure' ou None (aucune modification).
     Majeure : radio ajoutée, supprimée ou déplacée dans la liste (les numéros de registres changent),
               périphérique ajouté, supprimé ou remplacé par un autre type,
-              surveillance MAINV activée ou désactivée (un registre lu en plus ou en moins).
-    Mineure : tout autre changement (entrée/sortie d'un périphérique, entrée MAINV, IP, puissance, rôle,
+              surveillance MAINV activée ou désactivée (un registre lu en plus ou en moins),
+              tout registre existant de la base qui disparaît ou change de type ou de radio (ex. entrée d'un
+              câble déplacée sur une remote, ce qui décale les 150nn). Un registre simplement AJOUTÉ (ex. sortie
+              ajoutée à un feu) ne décale rien : mineure.
+    Mineure : tout autre changement (sortie d'un périphérique, entrée qui ne décale aucun registre, entrée MAINV, IP, puissance, rôle,
               amont, nom, inversion, textes, clé...)."""
     a, n = _contenu(_normalise(ancien)), _contenu(_normalise(nouveau))
     if a == n:
@@ -202,7 +205,38 @@ def classer_modification(ancien, nouveau):
         return 'majeure'
     if any(bool((x.get('mainv') or {}).get('actif')) != bool((y.get('mainv') or {}).get('actif')) for x, y in paires):
         return 'majeure'                               # MAINV activé/désactivé : un registre lu en plus ou en moins
+    ca, cn = _carte_registres(ancien), _carte_registres(nouveau)
+    if ca is not None and cn is not None and any(cn.get(adr) != v for adr, v in ca.items()):
+        return 'majeure'                               # v1.9 : un registre existant disparaît ou change de sens (décalage)
     return 'mineure'
+
+
+def _carte_registres(projet):
+    """Plan de registres de la base : {adresse: identité}. None si le projet est invalide.
+    Identité = type de registre + rang de la radio (pas son nom) + pour les détections et commandes,
+    le périphérique désigné par son rang dans la liste de la radio (pas son nom) : renommer reste mineur,
+    mais un registre qui désigne désormais un autre équipement est détecté."""
+    try:
+        pl = calculer_plan(projet)
+    except Exception:
+        return None
+    carte = {}
+    for S in pl['stations']:
+        rangs = sorted(((p.get('nom', ''), i) for i, p in enumerate(S['periph'])), key=lambda x: -len(x[0]))
+
+        def ident(label):
+            for nom, i in rangs:
+                if nom and (label == nom or label.startswith(nom + '_')):
+                    return f'P{i}' + label[len(nom):]
+            return label
+        for d in S['detections']:
+            carte[d['adresse']] = ('DET', S['index'], ident(d['label']) if d['label'] else ('LIBRE', d['di']))
+        for c in S['commandes']:
+            carte[c['adresse']] = ('CMD', S['index'], ident(c['label']))
+    rang = {S['nom']: S['index'] for S in pl['stations']}
+    for r in pl['registres']:
+        carte.setdefault(r['adresse'], (r['type'], rang.get(r['station'])))
+    return carte
 
 
 def prochaine_version(version, niveau):
@@ -362,7 +396,29 @@ def valider(projet):
                     if p.get('type') in TYPES_SORTIE_SIMPLE or p.get('type') == 'CAMERA_SPOT')
     if nb_feux > 10: E.append(f'{nb_feux} feux : maximum 10 (registres 401–430 et 441–450).')
     if nb_autres > 10: E.append(f'{nb_autres} signalisations autres : maximum 10 (registres 431–440).')
+    nb_det = nombre_detections(radios)
+    if nb_det > MAX_DETECTIONS:
+        E.append(f'{nb_det} registres de détection nécessaires : maximum {MAX_DETECTIONS} (registres 15001–15100 ; '
+                 f'au-delà ils chevaucheraient les comflags 151xx). Sur une remote, les entrées libres entre la '
+                 f'première et la dernière entrée utilisée comptent aussi.')
     return E
+
+
+MAX_DETECTIONS = 100         # 15001-15100 ; 15101+ = comflags
+
+
+def nombre_detections(radios):
+    """Nombre de registres 150nn utilisés, compté exactement comme calculer_plan :
+    base = entrées utilisées ; remote = de la plus petite à la plus grande entrée utilisée (trous compris)."""
+    n = 0
+    for r in radios:
+        dis = set()
+        for p in r.get('peripheriques', []):
+            if p.get('type') in TYPES_ENTREE:
+                dis.update(d for d in (p.get('di') or []) if isinstance(d, int))
+        if dis:
+            n += len(dis) if r.get('role') == 'base' else max(dis) - min(dis) + 1
+    return n
 
 
 def sorties_du_periph(p):
@@ -788,7 +844,8 @@ def C(tag, val):
 
 
 def _set(s, tag, val, count=1):
-    s2, n = re.subn(rf'<{tag}(?: d="\w")?>[^<]*</{tag}>|<{tag}/>', C(tag, val), s, count=count)
+    # remplacement par fonction : le texte est inséré tel quel (un « \ » n'est pas interprété par re)
+    s2, n = re.subn(rf'<{tag}(?: d="\w")?>[^<]*</{tag}>|<{tag}/>', lambda _m: C(tag, val), s, count=count)
     if n == 0: raise KeyError(tag)
     return s2
 

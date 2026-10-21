@@ -81,18 +81,23 @@ class ImportLogs(QThread):
                 self.fichier_termine.emit(i, chemin, r)
             return
         try:
-            for i, (chemin, forcer) in enumerate(self.fichiers):
-                if self.annule:
-                    break
-                self.fichier_commence.emit(i, os.path.basename(chemin))
-                try:
-                    r = m.importer_fichier(self.sid, chemin, forcer_serie=forcer,
-                                           progression=lambda n, total: self.avancement.emit(n, total))
-                except Exception as e:      # fichier illisible, disque plein… : rapport d'erreur, on continue
-                    traceback.print_exc()
-                    r = [{'fichier': os.path.basename(chemin), 'statut': 'erreur', 'message': str(e)}]
-                self.resultats.append((chemin, r))
-                self.fichier_termine.emit(i, chemin, r)
+            with m.lot():                   # un seul lot : chaque bloc réécrit une fois ; annuler garde ce qui est importé
+                for i, (chemin, forcer) in enumerate(self.fichiers):
+                    if self.annule:
+                        break
+                    self.fichier_commence.emit(i, os.path.basename(chemin))
+                    try:
+                        r = m.importer_fichier(self.sid, chemin, forcer_serie=forcer,
+                                               progression=lambda n, total: self.avancement.emit(n, total))
+                    except Exception as e:  # fichier illisible… : rapport d'erreur, on continue
+                        traceback.print_exc()
+                        r = [{'fichier': os.path.basename(chemin), 'statut': 'erreur', 'message': str(e)}]
+                    self.resultats.append((chemin, r))
+                    self.fichier_termine.emit(i, chemin, r)
+        except Exception as e:              # écriture du lot impossible (disque plein…) : le lot entier est annulé
+            traceback.print_exc()
+            self.resultats = [(c, [{'fichier': os.path.basename(c), 'statut': 'erreur',
+                                    'message': f'Import annulé, aucun fichier gardé : {e}'}]) for c, _r in self.resultats]
         finally:
             m.fermer()
 

@@ -27,6 +27,7 @@ class FausseCentrale:
 
     def __init__(self, fichiers, nom='B-BASE', serie='99000000001', mdp='secret'):
         self.fichiers, self.nom, self.serie, self.mdp = dict(fichiers), nom, serie, mdp
+        self.coupes = set()            # fichiers dont l'envoi est coupé au milieu (v1.2)
         fc = self
 
         class H(BaseHTTPRequestHandler):
@@ -53,6 +54,11 @@ class FausseCentrale:
                 self.send_response(200)
                 self.send_header('Content-Length', str(len(corps)))
                 self.end_headers()
+                if self.path[19:] in fc.coupes:
+                    self.wfile.write(corps[:len(corps) // 3])       # la centrale coupe en plein fichier
+                    self.wfile.flush()
+                    self.close_connection = True
+                    return
                 self.wfile.write(corps)
 
         self.srv = HTTPServer(('127.0.0.1', 0), H)
@@ -147,12 +153,6 @@ class TestRecuperation(unittest.TestCase):
         r = R.recuperer(self.m, self.sid, annuler=lambda: True)
         self.assertEqual(r['statut'], 'annule')
 
-    def test_periode_defaut(self):
-        t = L.utc_depuis_locale(2026, 10, 19, 10, 23)
-        self.assertEqual(L.periode_defaut(t), (L.utc_depuis_locale(2026, 10, 13), t))
-        t = L.utc_depuis_locale(2026, 10, 27, 8, 0)          # semaine du changement d'heure
-        self.assertEqual(L.heure_locale(L.periode_defaut(t)[0]), '21.10.2026 00:00:00')
-
     def test_periode_par_defaut(self):
         self.assertIsNone(self.m.periode_par_defaut(self.sid))                 # aucune donnée
         R.recuperer(self.m, self.sid)                                           # 2 jours de données
@@ -163,6 +163,25 @@ class TestRecuperation(unittest.TestCase):
         t1 = L.utc_depuis_locale(2026, 10, 26, 10)
         self.assertEqual(L.heure_locale(L.reculer_jours(t1, 7)), '19.10.2026 10:00:00')
         self.assertEqual(t1 - L.reculer_jours(t1, 7), 7 * 86400 + 3600)
+
+    def test_coupure_en_plein_fichier(self):
+        n1, n2 = sorted(self.fc.fichiers)
+        self.fc.coupes.add(n2)
+        r = R.recuperer(self.m, self.sid)
+        self.assertEqual(r['statut'], 'injoignable')
+        self.assertIn('Arrêt après 1 fichier', r['message'])
+        self.assertEqual(self.m.noms_fichiers(self.sid), {n1})               # le 1er fichier est gardé
+        self.assertEqual(self.m.acces(self.sid)['dernier_resultat'], 'injoignable')
+        self.fc.coupes.clear()
+        self.assertEqual(R.recuperer(self.m, self.sid)['nouveaux'], 1)       # la suite à la récupération suivante
+
+    def test_tout_recuperer_continue_apres_coupure(self):
+        sid2 = self.m.ajouter_config(json.loads(lire(os.path.join(RACINE, 'examples', 'demo_site_A.json'), 'r')))['systeme_id']
+        self.m.definir_acces(sid2, '127.0.0.1:1', 'user', R.proteger_mdp('x'))
+        self.fc.coupes.add(sorted(self.fc.fichiers)[0])
+        res = R.recuperer_tout(self.m)
+        self.assertEqual([r['statut'] for _, r in res], ['injoignable', 'injoignable'])
+        self.assertIsNotNone(self.m.acces(sid2)['derniere_recuperation'])
 
     def test_tout_recuperer(self):
         sid2 = self.m.ajouter_config(json.loads(lire(os.path.join(RACINE, 'examples', 'demo_site_A.json'), 'r')))['systeme_id']
