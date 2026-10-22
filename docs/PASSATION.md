@@ -17,7 +17,7 @@ Vues : frise d'état global, synthèse par station, détail par station, type de
 | Élément | Valeur |
 |---|---|
 | Dépôt | `lucapancottigz/elpro-logs` (**public**) |
-| Dernière version | **1.2.0** (moteur `elpro_logs` v1.2 + `elpro_remote` v1.2) |
+| Dernière version | **1.3.0** (moteur `elpro_logs` v1.3 + `elpro_remote` v1.2) |
 | Langage / interface | Python 3.11+ / PySide6 / **pyqtgraph** (pas QtCharts, pour une question de licence) / tzdata |
 | Distribution | Installateur Inno Setup (`AppId` propre, différent de celui d'ELPRO Config) dans les Releases GitHub |
 | Licence | Propriétaire : « © 2026 Geoazimut SàRL. Tous droits réservés. », geoazimut.com |
@@ -40,7 +40,7 @@ Vues : frise d'état global, synthèse par station, détail par station, type de
 2. **Aucune règle métier dans l'interface** : pas de conversion de tension, de seuil, d'état ou de durée. Libellés, unités, couleurs d'état et seuils viennent de `elpro_logs`.
 3. **Aucune donnée réelle dans le dépôt**, qui est public : pas de `.elpro.json` ou de `.log` de site, pas de base `.db`, pas de nom de site, d'adresse WireGuard ni de n° de série réel. `.gitignore` contient `*.db`, `*.db-wal` et `*.db-shm`.
 4. Noms de fichiers de code en anglais ; commentaires, documentation et interface en français.
-5. Avant toute livraison : **`Ran 40 tests … OK`** (`tests/`), plus la recette de l'interface (`tests_ui/`) : `Recette interface : OK`. `build.bat` vérifie aussi l'exécutable (`app.py --verifier`).
+5. Avant toute livraison : **`Ran 44 tests … OK`** (`tests/`), plus la recette de l'interface (`tests_ui/`) : `Recette interface : OK`. `build.bat` vérifie aussi l'exécutable (`app.py --verifier`).
 6. Ne change pas l'`AppId` ni `AppPublisher` de l'installateur. AppUserModelID : `GeoAzimut.ELPROLogs`.
 
 ---
@@ -58,7 +58,7 @@ elpro-logs/
 │  └─ elpro_engine.py   ← COPIE du moteur d'ELPRO Config (v1.9) : signification des registres
 ├─ tools/make_demo_logs.py  ← génère des .log fictifs au format exact de la radio
 ├─ examples/            ← demo_site_A/B.json (fictifs ; B a un radar en cm) + logs/ (3 jours de B)
-├─ tests/               ← test_logs.py (27) + test_remote.py (13, avec une fausse centrale HTTP)
+├─ tests/               ← test_logs.py (31) + test_remote.py (13, avec une fausse centrale HTTP)
 ├─ tests_ui/            ← recette automatique de l'interface
 ├─ installer/           ← elpro_logs.iss + génération de la ressource de version
 └─ docs/                ← 00_LISEZMOI, 01_Architecture, 02_Ecrans, 03_Stockage, 04_Recette
@@ -67,7 +67,7 @@ elpro-logs/
 **Points d'architecture :**
 - **Heures :** le moteur travaille **uniquement en secondes UTC**, comme les radios. L'interface affiche et saisit en **heure suisse** avec `L.heure_locale()` et `L.utc_depuis_locale()`. L'axe des dates est calculé en Python : l'axe de pyqtgraph avec décalage horaire faisait planter PySide6 à partir de la 6.10.
 - **Threads :** l'import, la récupération et les calculs longs tournent dans un `QThread`, chacun avec **sa propre instance `L.Magasin`** (une connexion SQLite ne se partage pas entre threads).
-- **Base :** un seul fichier, `Documents\ELPRO Logs\elpro_logs.db`, qui contient tous les systèmes. Il **n'est pas supprimé** à la désinstallation. Pour le sauvegarder, il suffit de le copier.
+- **Base :** un seul fichier qui contient tous les systèmes, par défaut `Documents\ELPRO Logs\elpro_logs.db` ; son emplacement se règle dans Fichier › Emplacement des données (clé `QSettings` `base/chemin`, v1.3) et une base introuvable au démarrage n'est jamais recréée vide. Il **n'est pas supprimé** à la désinstallation. Sauvegarde : Fichier › Emplacement des données › Faire une copie de sauvegarde (application ouverte), ou copier le fichier application fermée.
 - **Copie du moteur d'ELPRO Config :** si l'ingénieur change le plan de registres dans ELPRO Config, il livrera ici aussi une nouvelle copie d'`elpro_engine.py`.
 
 ---
@@ -137,6 +137,7 @@ elpro-logs/
 | 1.0.0 (corrections avant publication) | Bulle de la frise stable ; texte lisible sur fond coloré en thème sombre Windows |
 | 1.1.0 | Connexion à la centrale, Récupérer les logs, Tout récupérer, rappel après 5 jours, période par défaut d'une semaine |
 | 1.2.0 | Corrections de la relecture : coupure en plein téléchargement, batterie à 0 V, imports groupés (`m.lot()`), seuils de disponibilité dans le moteur ; code mort retiré ; ELPRO Config v1.9 |
+| 1.3.0 | « Tout récupérer » dans la barre d'outils principale ; emplacement des données (déplacer, ouvrir une autre base, copie de sauvegarde, défaut) ; base introuvable au démarrage jamais recréée ; import atomique par fichier |
 
 ---
 
@@ -151,7 +152,7 @@ elpro-logs/
 ## 10. Pour démarrer
 
 1. Clone le dépôt et lis `docs/00` à `docs/04`, le `CHANGELOG.md` et ce document.
-2. Crée le venv et lance les tests : `Ran 40 tests … OK`, puis la recette de l'interface : `Recette interface : OK`.
+2. Crée le venv et lance les tests : `Ran 44 tests … OK`, puis la recette de l'interface : `Recette interface : OK`.
 3. Lance l'application :
    - ajoute `examples/demo_site_B.json` ;
    - importe `examples/logs/*.log` ;

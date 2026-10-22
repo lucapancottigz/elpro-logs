@@ -2,6 +2,19 @@
 
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation [SemVer](https://semver.org/lang/fr/).
 
+## [1.3.0] — 2026-10-22
+
+### Ajouté
+- **Fichier › Emplacement des données…** : voir où se trouve la base et sa taille, **Ouvrir le dossier**, **Déplacer vers un autre dossier…** (copie vérifiée, puis proposition de supprimer l'ancien fichier ; jamais d'écrasement d'une base existante ; avertissement pour un dossier réseau ou synchronisé comme OneDrive), **Ouvrir une base existante…**, **Revenir à l'emplacement par défaut**. L'emplacement choisi est mémorisé.
+- **Copie de sauvegarde** de la base, application ouverte (même boîte de dialogue).
+- Démarrage : si la base de l'emplacement choisi est introuvable (clé USB retirée, lecteur réseau absent…), une fenêtre propose Réessayer, Ouvrir une autre base, Utiliser l'emplacement par défaut ou Quitter. Aucune base vide n'est créée à sa place. Une base endommagée ou d'une version plus récente est signalée de la même façon.
+
+### Modifié
+- **Tout récupérer** est maintenant dans la barre d'outils principale, en haut de la fenêtre, avec son icône et son texte, visible sur tous les onglets ; grisé pendant un import ou une récupération.
+
+### Corrigé
+- Import atomique par fichier : un fichier dont l'import plante n'est jamais enregistré comme importé, même au milieu d'un import groupé ; les autres fichiers sont gardés.
+
 ## [1.2.0] — 2026-10-21
 
 ### Corrigé
