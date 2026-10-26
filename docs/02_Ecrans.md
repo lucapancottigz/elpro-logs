@@ -16,7 +16,7 @@ S'il n'y a encore aucun système : page d'accueil avec un grand bouton **« Ajou
 |---|---|---|
 | Fichier | Ajouter un système (.elpro.json)… | Choix du fichier → `m.ajouter_config(json)`. Statut `nouveau` : nouvel onglet, sélectionné. `version` : voir *Mettre à jour la configuration*. `identique` : « Ce système est déjà dans l'application. » et l'onglet est sélectionné. `ValueError` : afficher le message. |
 | Fichier | Importer des logs… (`Ctrl+I`) | Pour le système de l'onglet actif. Sélection multiple de `.log`, `.zip`, `.csv`. Voir § 7. |
-| Fichier | Tout récupérer (`Ctrl+Maj+R`, aussi dans la barre d'outils principale) | `R.recuperer_tout(...)` dans un `QThread` ; progression « <système> — fichier n / total » ; Annuler arrête après le fichier en cours. Rapport : une ligne par système (Système, Résultat, Nouveaux fichiers, Message), `alerte` en orange sous la ligne. Une centrale `mauvaise_centrale` n'est pas forcée. Puis rafraîchir tous les onglets. Grisé si aucun système n'a de connexion configurée. (v1.1) |
+| Fichier | Tout récupérer (`Ctrl+Maj+R`, aussi dans la barre de menus entre Système et Aide) | `R.recuperer_tout(...)` dans un `QThread` ; progression « <système> — fichier n / total » ; Annuler arrête après le fichier en cours. Rapport : une ligne par système (Système, Résultat, Nouveaux fichiers, Message), `alerte` en orange sous la ligne. Une centrale `mauvaise_centrale` n'est pas forcée. Puis rafraîchir tous les onglets. Grisé si aucun système n'a de connexion configurée. (v1.1) |
 | Fichier | Exporter en CSV… | Exporte les canaux cochés dans l'onglet Détail sur la période affichée (`m.exporter_csv`). Grisé hors de l'onglet Détail ou si rien n'est coché. |
 | Fichier | Emplacement des données… | Voir § 9. (v1.3) |
 | Fichier | Quitter | — |
@@ -29,9 +29,9 @@ S'il n'y a encore aucun système : page d'accueil avec un grand bouton **« Ajou
 | Aide | Liste de log à configurer sur la centrale | Fenêtre avec `L.REGLAGES_STANDARD` et le tableau `L.LISTE_STANDARD` (Nom, 1er registre, Nombre), bouton Copier. |
 | Aide | À propos | Comme ELPRO Config : nom, version, copyright, site, licences tierces. |
 
-### Barre d'outils principale (v1.3)
+### « Tout récupérer » dans la barre de menus (v1.3.1)
 
-En haut de la fenêtre, juste sous les menus, non déplaçable, visible quel que soit l'onglet. Premier bouton : **Tout récupérer**, icône et texte, info-bulle « Récupérer les logs de toutes les centrales configurées (Ctrl+Maj+R) ». Ce bouton n'apparaît nulle part ailleurs (ni dans les onglets, ni dans une autre barre). Grisé si aucun système n'a de connexion configurée, ou pendant un import ou une récupération. « Récupérer les logs » (un seul système) reste dans le bandeau de chaque onglet.
+Entrée **cliquable** de la barre de menus, entre **Système** et **Aide** : un clic lance directement la récupération (ce n'est pas un menu déroulant). C'est la même action que *Fichier › Tout récupérer* : même texte, raccourci `Ctrl+Maj+R`, info-bulle « Récupérer les logs de toutes les centrales configurées (Ctrl+Maj+R) » (`menuBar().insertAction(menu_aide.menuAction(), action_tout_recuperer)`). Il n'y a pas de barre d'outils (celle de la 1.3.0 est retirée) et « Tout récupérer » n'apparaît pas dans les onglets. Grisé si aucun système n'a de connexion configurée, ou pendant un import ou une récupération. « Récupérer les logs » (un seul système) reste dans le bandeau de chaque onglet.
 
 **Glisser-déposer** : des `.log`/`.zip`/`.csv` déposés sur la fenêtre sont importés dans le système de l'onglet actif ; un `.elpro.json` déposé ajoute un système.
 

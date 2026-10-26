@@ -2,6 +2,14 @@
 
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation [SemVer](https://semver.org/lang/fr/).
 
+## [1.3.1] — 2026-10-26
+
+### Modifié
+- **Tout récupérer** est une entrée cliquable de la barre de menus, entre **Système** et **Aide** : un clic lance directement la récupération. Même raccourci (`Ctrl+Maj+R`), toujours aussi dans le menu Fichier, grisé dans les mêmes cas. La barre d'outils ajoutée en 1.3.0 est retirée.
+
+### Corrigé
+- Avertissement Python `invalid escape sequence '\p'` au chargement du moteur (texte d'aide de la détection des dossiers réseau).
+
 ## [1.3.0] — 2026-10-22
 
 ### Ajouté
