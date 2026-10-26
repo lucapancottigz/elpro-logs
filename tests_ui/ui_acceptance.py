@@ -535,15 +535,18 @@ def main():
     verifier(acc['adresse'] == adresse and acc['utilisateur'] == 'user' and tab.mode == 'defaut',
              'W7 connexion conservée au redémarrage, période par défaut')
 
-    print('== Barre d\'outils et emplacement des données (v1.3)')
-    bo = f.barre_outils
-    verifier(bo.actions()[0] is f.action_tout_recuperer and f.toolBarArea(bo) == Qt.TopToolBarArea and not bo.isMovable()
-             and bo.toolButtonStyle() == Qt.ToolButtonTextBesideIcon and bo.isVisible(),
-             'E1 « Tout récupérer » dans la barre d\'outils en haut, avec son texte')
+    print('== « Tout récupérer » dans la barre de menus (v1.3.1) et emplacement des données (v1.3)')
+    barre = [a.text().replace('&', '') for a in f.menuBar().actions()]
+    mf = f.menuBar().actions()[0].menu()
+    verifier(barre == ['Fichier', 'Système', 'Tout récupérer', 'Aide']
+             and f.menuBar().actions()[2] is f.action_tout_recuperer and f.action_tout_recuperer.menu() is None
+             and f.action_tout_recuperer.shortcut().toString() == 'Ctrl+Shift+R'
+             and f.action_tout_recuperer in mf.actions(),
+             f'E1 entrée cliquable entre Système et Aide (même action, Ctrl+Maj+R, aussi dans Fichier) : {barre}')
     boutons_onglets = [b.text() for k in range(f.onglets.count())
                        for b in f.onglets.widget(k).findChildren(QAbstractButton)]
-    verifier('Tout récupérer' not in boutons_onglets and len(f.findChildren(QToolBar)) == 1,
-             'E1 absent des onglets, une seule barre d\'outils')
+    verifier('Tout récupérer' not in boutons_onglets and not f.findChildren(QToolBar),
+             'E1 absent des onglets, aucune barre d\'outils')
     f._occuper(True)
     de = dialogs.EmplacementDonnees(f)
     verifier(not f.action_tout_recuperer.isEnabled() and not any(b.isEnabled() for b in de.boutons),

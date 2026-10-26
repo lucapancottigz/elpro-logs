@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2026 Geoazimut SàRL (https://geoazimut.com). Tous droits réservés.
-"""Fenêtre principale : menus, barre d'outils, un onglet par système (tous ouverts au démarrage), page d'accueil,
+"""Fenêtre principale : menus (dont l'entrée « Tout récupérer »), un onglet par système (tous ouverts au démarrage), page d'accueil,
 glisser-déposer, récupération des logs depuis les centrales, barre d'état (taille de la base, copyright)."""
 import os, sqlite3
 
 from PySide6.QtCore import Qt, QSettings, QStandardPaths, QEventLoop
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (QMainWindow, QTabWidget, QStackedWidget, QWidget, QVBoxLayout, QLabel, QPushButton,
-                               QFileDialog, QMessageBox, QInputDialog, QProgressDialog, QToolBar, QStyle)
+                               QFileDialog, QMessageBox, QInputDialog, QProgressDialog)
 
 import elpro_engine as M
 import elpro_logs as L
@@ -169,7 +169,6 @@ class MainWindow(QMainWindow):
         self.action_importer = action(mf, 'Importer des logs…', self.importer_logs, QKeySequence('Ctrl+I'))
         self.action_exporter = action(mf, 'Exporter en CSV…', self.exporter_csv)
         self.action_tout_recuperer = action(mf, 'Tout récupérer', self.tout_recuperer, QKeySequence('Ctrl+Shift+R'))
-        self.action_tout_recuperer.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
         self.action_tout_recuperer.setToolTip('Récupérer les logs de toutes les centrales configurées (Ctrl+Maj+R)')
         mf.addSeparator()
         action(mf, 'Emplacement des données…', self.emplacement_donnees)
@@ -188,16 +187,11 @@ class MainWindow(QMainWindow):
         self.actions_systeme += [action(ms, 'Renommer…', self.renommer),
                                  action(ms, 'Supprimer ce système…', self.supprimer)]
 
-        self.barre_outils = QToolBar('Barre d\'outils principale')
-        self.barre_outils.setObjectName('barre_principale')
-        self.barre_outils.setMovable(False)
-        self.barre_outils.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        self.barre_outils.addAction(self.action_tout_recuperer)
-        self.addToolBar(Qt.TopToolBarArea, self.barre_outils)
-
         ma = self.menuBar().addMenu('&Aide')
         action(ma, 'Liste de log à configurer sur la centrale', lambda: AideListeLog(self).exec())
         action(ma, 'À propos', self.a_propos)
+        # entrée cliquable de la barre de menus, entre Système et Aide (même action que dans Fichier)
+        self.menuBar().insertAction(ma.menuAction(), self.action_tout_recuperer)
 
     def a_propos(self):
         AboutDialog(self, self.base).exec()

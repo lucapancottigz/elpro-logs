@@ -603,7 +603,7 @@ DOSSIERS_SYNCHRONISES = ('onedrive', 'dropbox', 'google drive', 'googledrive', '
 
 
 def est_emplacement_reseau(chemin):
-    """True pour un chemin réseau (\\serveur\partage) ou un lecteur réseau Windows (ex. Z:)."""
+    """True pour un chemin réseau (\\\\serveur\\partage) ou un lecteur réseau Windows (ex. Z:)."""
     a = os.path.abspath(chemin)
     if a.startswith('\\\\') or a.startswith('//'):
         return True

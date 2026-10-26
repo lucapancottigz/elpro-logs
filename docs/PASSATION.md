@@ -138,6 +138,7 @@ elpro-logs/
 | 1.1.0 | Connexion à la centrale, Récupérer les logs, Tout récupérer, rappel après 5 jours, période par défaut d'une semaine |
 | 1.2.0 | Corrections de la relecture : coupure en plein téléchargement, batterie à 0 V, imports groupés (`m.lot()`), seuils de disponibilité dans le moteur ; code mort retiré ; ELPRO Config v1.9 |
 | 1.3.0 | « Tout récupérer » dans la barre d'outils principale ; emplacement des données (déplacer, ouvrir une autre base, copie de sauvegarde, défaut) ; base introuvable au démarrage jamais recréée ; import atomique par fichier |
+| 1.3.1 | « Tout récupérer » : entrée cliquable de la barre de menus entre Système et Aide, barre d'outils retirée ; avertissement Python `\p` corrigé dans `engine/elpro_logs.py` |
 
 ---
 

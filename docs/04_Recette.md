@@ -113,13 +113,13 @@ Sur Windows :
 
 ## 5. Barre d'outils et emplacement des données (v1.3)
 
-Automatique : `tests_ui\ui_acceptance.py` vérifie « Tout récupérer » dans la barre d'outils principale (en haut, avec texte, absent des onglets), les boutons grisés pendant un import ou une récupération, le déplacement de la base dans un dossier temporaire (onglets rechargés, ancien fichier supprimé, chemin mémorisé), le refus d'écraser une base existante, la relance (même base, systèmes et connexion), la copie de sauvegarde et son ouverture, la base introuvable au démarrage (fenêtre de choix, aucune base vide créée, Réessayer une fois le dossier revenu) et une base endommagée (sans Réessayer).
+Automatique : `tests_ui\ui_acceptance.py` vérifie « Tout récupérer » comme entrée cliquable de la barre de menus entre Système et Aide (même action que dans Fichier, `Ctrl+Maj+R`, aucune barre d'outils, absent des onglets, v1.3.1), les boutons grisés pendant un import ou une récupération, le déplacement de la base dans un dossier temporaire (onglets rechargés, ancien fichier supprimé, chemin mémorisé), le refus d'écraser une base existante, la relance (même base, systèmes et connexion), la copie de sauvegarde et son ouverture, la base introuvable au démarrage (fenêtre de choix, aucune base vide créée, Réessayer une fois le dossier revenu) et une base endommagée (sans Réessayer).
 
 Sur Windows :
 
 | # | Contrôle | Attendu | OK |
 |---|---|---|---|
-| E1 | « Tout récupérer » | En haut de la fenêtre, avec son texte, visible sur tous les onglets ; plus dans les onglets | |
+| E1 | « Tout récupérer » (v1.3.1) | Dans la barre de menus, entre Système et Aide ; un clic lance la récupération (pas de menu déroulant) ; grisé sans connexion configurée ; aucune barre d'outils ; toujours dans Fichier et sur `Ctrl+Maj+R` | |
 | E2 | Fichier › Emplacement des données › Déplacer vers un autre dossier (ex. `D:\ELPRO Logs`) | Base copiée, onglets rechargés à l'identique ; question « Supprimer l'ancien fichier ? » | |
 | E3 | Fermer et relancer | La base du nouvel emplacement s'ouvre, tous les systèmes et connexions sont là (mot de passe non redemandé) | |
 | E4 | Renommer temporairement le dossier choisi en E2, relancer | Fenêtre « base introuvable » ; Quitter ; remettre le nom ; relancer : tout revient | |
