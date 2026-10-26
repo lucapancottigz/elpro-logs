@@ -2,9 +2,11 @@
 
 ## Emplacement
 
-Un seul fichier pour tous les systèmes : `Documents\ELPRO Logs\elpro_logs.db` (`L.chemin_base_defaut()`). Pendant l'utilisation, SQLite crée aussi `elpro_logs.db-wal` et `elpro_logs.db-shm` : ne pas les supprimer.
+Un seul fichier pour tous les systèmes : par défaut `Documents\ELPRO Logs\elpro_logs.db` (`L.chemin_base_defaut()`). Pendant l'utilisation, SQLite crée aussi `elpro_logs.db-wal` et `elpro_logs.db-shm` : ne pas les supprimer.
 
-**Sauvegarde** : copier `elpro_logs.db` application fermée. Pour passer à un autre PC : installer ELPRO Logs, puis copier le fichier au même endroit.
+**L'emplacement est réglable** (v1.3) : *Fichier › Emplacement des données › Déplacer vers un autre dossier…* (voir `02_Ecrans.md` § 9). Le chemin choisi est mémorisé (`QSettings`, clé `base/chemin`). Si ce dossier n'est plus accessible au démarrage (clé USB retirée, lecteur réseau absent), l'application le signale et ne crée **jamais** de base vide à sa place. Un dossier réseau ou synchronisé (OneDrive, Dropbox…) est déconseillé : l'application avertit avant d'y déplacer la base ; sur un dossier réseau, le moteur utilise le journal classique de SQLite au lieu de WAL.
+
+**Sauvegarde** : *Fichier › Emplacement des données › Faire une copie de sauvegarde…*, application ouverte (copie cohérente par l'API de sauvegarde SQLite, puis vérifiée). Ou copier `elpro_logs.db` application fermée. Pour passer à un autre PC : installer ELPRO Logs, copier le fichier, puis *Ouvrir une base existante…*.
 
 ## Principe
 

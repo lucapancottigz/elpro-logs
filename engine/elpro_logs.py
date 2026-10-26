@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2026 Geoazimut SàRL (https://geoazimut.com). Tous droits réservés.
 """
-Moteur ELPRO Logs (v1.2) — IMPLÉMENTATION DE RÉFÉRENCE.
+Moteur ELPRO Logs (v1.3) — IMPLÉMENTATION DE RÉFÉRENCE.
 
 Rôle :
   1. lire les fichiers de log (DataLog) des centrales ELPRO 415U-2-C4 ;
@@ -25,7 +25,7 @@ Stockage : SQLite (un seul fichier pour tous les systèmes).
 Python 3.10+, bibliothèque standard uniquement (+ elpro_engine.py, copie de ELPRO Config).
 Toutes les heures manipulées par le moteur sont des secondes UTC (epoch, entiers).
 """
-import os, io, re, gzip, json, zlib, sqlite3, tarfile, zipfile, hashlib, datetime, threading, contextlib
+import os, io, re, sys, gzip, json, zlib, sqlite3, tarfile, zipfile, hashlib, datetime, threading, contextlib
 
 import elpro_engine as M
 
@@ -595,6 +595,91 @@ def maintenant():
     return int(datetime.datetime.now(datetime.timezone.utc).timestamp())
 
 
+# --------------------------------------------------------------------------------------------
+# Emplacement de la base (v1.3)
+# --------------------------------------------------------------------------------------------
+NOM_BASE = 'elpro_logs.db'
+DOSSIERS_SYNCHRONISES = ('onedrive', 'dropbox', 'google drive', 'googledrive', 'icloud', 'nextcloud', 'owncloud')
+
+
+def est_emplacement_reseau(chemin):
+    """True pour un chemin réseau (\\serveur\partage) ou un lecteur réseau Windows (ex. Z:)."""
+    a = os.path.abspath(chemin)
+    if a.startswith('\\\\') or a.startswith('//'):
+        return True
+    if sys.platform == 'win32' and len(a) >= 2 and a[1] == ':':
+        try:
+            import ctypes
+            return ctypes.windll.kernel32.GetDriveTypeW(a[:2] + '\\') == 4      # DRIVE_REMOTE
+        except Exception:
+            return False
+    return False
+
+
+def avertissement_emplacement(chemin):
+    """Texte d'avertissement si l'emplacement est risqué pour une base SQLite, sinon None."""
+    if est_emplacement_reseau(chemin):
+        return ("Ce dossier est sur le réseau. La base fonctionnera, mais plus lentement, et elle risque d'être "
+                "endommagée si la connexion se coupe pendant un import ou si deux personnes l'ouvrent en même "
+                "temps. Un dossier local est recommandé.")
+    bas = os.path.abspath(chemin).lower()
+    if any(m in bas for m in DOSSIERS_SYNCHRONISES):
+        return ("Ce dossier est synchronisé (OneDrive, Dropbox…). La synchronisation pendant que l'application est "
+                "ouverte peut endommager la base ou créer des copies en conflit. Fermez l'application avant toute "
+                "synchronisation, ou choisissez un dossier non synchronisé.")
+    return None
+
+
+def verifier_base(chemin):
+    """Contrôle qu'un fichier est une base ELPRO Logs utilisable.
+    -> {'ok', 'message', 'nb_systemes', 'format'}."""
+    if not os.path.isfile(chemin):
+        return {'ok': False, 'message': 'Fichier introuvable.', 'nb_systemes': 0, 'format': None}
+    try:
+        cx = sqlite3.connect(f'file:{os.path.abspath(chemin)}?mode=ro', uri=True, timeout=10)
+        try:
+            f = cx.execute("SELECT valeur FROM meta WHERE cle='format'").fetchone()
+            n = cx.execute('SELECT COUNT(*) FROM systemes').fetchone()[0]
+            ok = cx.execute('PRAGMA quick_check').fetchone()[0] == 'ok'
+        finally:
+            cx.close()
+    except sqlite3.Error:
+        return {'ok': False, 'message': 'Ce fichier n\'est pas une base ELPRO Logs.', 'nb_systemes': 0, 'format': None}
+    if f is None:
+        return {'ok': False, 'message': 'Ce fichier n\'est pas une base ELPRO Logs.', 'nb_systemes': 0, 'format': None}
+    if int(f[0]) > FORMAT_BASE:
+        return {'ok': False, 'message': 'Base créée par une version plus récente d\'ELPRO Logs : mettez l\'application à jour.',
+                'nb_systemes': n, 'format': int(f[0])}
+    if not ok:
+        return {'ok': False, 'message': 'Base endommagée (contrôle d\'intégrité en échec).', 'nb_systemes': n,
+                'format': int(f[0])}
+    return {'ok': True, 'message': f'Base valide : {n} système(s).', 'nb_systemes': n, 'format': int(f[0])}
+
+
+def copier_base(source, destination):
+    """Copie complète et cohérente de la base (API de sauvegarde SQLite, WAL compris), puis vérification.
+    Refuse d'écraser un fichier existant. Lève FileExistsError / RuntimeError. Renvoie la taille en octets.
+    Sert à « Déplacer la base » et à faire une sauvegarde pendant que l'application est ouverte."""
+    if os.path.exists(destination):
+        raise FileExistsError(destination)
+    os.makedirs(os.path.dirname(os.path.abspath(destination)), exist_ok=True)
+    src = sqlite3.connect(source, timeout=30)
+    dst = sqlite3.connect(destination)
+    try:
+        src.backup(dst)
+        dst.execute('PRAGMA journal_mode=DELETE')
+    finally:
+        dst.close(); src.close()
+    v = verifier_base(destination)
+    if not v['ok']:
+        try:
+            os.remove(destination)
+        except OSError:
+            pass
+        raise RuntimeError('La copie de la base a échoué : ' + v['message'])
+    return os.path.getsize(destination)
+
+
 def chemin_base_defaut():
     """Documents\\ELPRO Logs\\elpro_logs.db (sauvegarde = copier ce fichier)."""
     return os.path.join(os.path.expanduser('~'), 'Documents', 'ELPRO Logs', 'elpro_logs.db')
@@ -603,12 +688,17 @@ def chemin_base_defaut():
 class Magasin:
     """Accès à la base. Une instance par thread (l'import tourne dans un thread à part)."""
 
-    def __init__(self, chemin):
+    def __init__(self, chemin, creer=True):
+        """creer=False : la base doit déjà exister (FileNotFoundError sinon). À utiliser au démarrage avec
+        l'emplacement choisi par l'utilisateur : ne jamais recréer en silence une base vide."""
+        if not creer and not os.path.isfile(chemin):
+            raise FileNotFoundError(chemin)
         d = os.path.dirname(os.path.abspath(chemin))
         os.makedirs(d, exist_ok=True)
         self.chemin = chemin
         self.cx = sqlite3.connect(chemin, timeout=30)
-        self.cx.execute('PRAGMA journal_mode=WAL')
+        # WAL ne fonctionne pas de façon sûre sur un partage réseau : journal classique dans ce cas
+        self.cx.execute('PRAGMA journal_mode=DELETE' if est_emplacement_reseau(chemin) else 'PRAGMA journal_mode=WAL')
         self.cx.execute('PRAGMA synchronous=NORMAL')
         self.cx.executescript(SCHEMA)
         f = self.cx.execute("SELECT valeur FROM meta WHERE cle='format'").fetchone()
@@ -814,44 +904,54 @@ class Magasin:
             return any(a <= t < b for a, b in cov)
 
         gardees = [(t, v) for t, v in lg['lignes'] if not couvert(t)]
+        # calculs d'abord (aucune écriture) : plages continues (écart > 1,5 pas = trou) et points à garder
+        plages, lots = [], []
+        if gardees:
+            prec, a = None, None
+            lignes_val = []
+            nouv = True
+            for t, v in gardees:
+                if prec is None or t - prec > 1.5 * pas:
+                    if prec is not None:
+                        plages.append((a, prec + pas))
+                    a, nouv = t, True
+                lignes_val.append((t, v, nouv))
+                nouv, prec = False, t
+            plages.append((a, prec + pas))
+            dern = {}
+            for n, (t, v, debut_plage) in enumerate(lignes_val):
+                for k, r in cols:
+                    x = v[k]
+                    if debut_plage or dern.get(r, 'rien') != x:
+                        lots.append((r, t, x))
+                        dern[r] = x
+                if progression and n % 500 == 0:
+                    progression(n, len(lignes_val))
+        # écritures : tout ou rien POUR CE FICHIER (v1.3), y compris à l'intérieur d'un lot.
+        # Un fichier dont l'import plante ne reste jamais enregistré comme « importé ».
         cur = self.cx.cursor()
-        fid = cur.execute('INSERT INTO fichiers (systeme_id, nom, empreinte, serie, t_debut, t_fin, pas, nb_lignes, '
-                          'nb_lignes_gardees, importe_le) VALUES (?,?,?,?,?,?,?,?,?,?)',
-                          (sid, lg['nom'], lg['empreinte'], lg['serie'], ts[0], ts[-1] + pas, pas,
-                           len(ts), len(gardees), maintenant())).lastrowid
-        if not gardees:
-            self._valider()
-            return dict(rap, statut='deja_couvert', message='Toutes les lignes étaient déjà importées.',
-                        t_debut=ts[0], t_fin=ts[-1] + pas)
-        # plages continues : écart > 1,5 pas = trou
-        plages, prec, a = [], None, None
-        lignes_val = []
-        nouv = True
-        for t, v in gardees:
-            if prec is None or t - prec > 1.5 * pas:
-                if prec is not None:
-                    plages.append((a, prec + pas))
-                a, nouv = t, True
-            lignes_val.append((t, v, nouv))
-            nouv, prec = False, t
-        plages.append((a, prec + pas))
-        dern = {}
-        lots = []
-        for n, (t, v, debut_plage) in enumerate(lignes_val):
-            for k, r in cols:
-                x = v[k]
-                if debut_plage or dern.get(r, 'rien') != x:
-                    lots.append((r, t, x))
-                    dern[r] = x
-            if progression and n % 500 == 0:
-                progression(n, len(lignes_val))
-        self._ecrire_points(cur, sid, lots)
-        cur.executemany('INSERT OR REPLACE INTO couverture VALUES (?,?,?,?)', [(sid, a, b, fid) for a, b in plages])
-        if lg['serie'] and (not serie_sys or forcer_serie):
-            cur.execute('UPDATE systemes SET serie=? WHERE id=?', (lg['serie'], sid))
+        cur.execute('SAVEPOINT import_fichier')
+        try:
+            fid = cur.execute('INSERT INTO fichiers (systeme_id, nom, empreinte, serie, t_debut, t_fin, pas, nb_lignes, '
+                              'nb_lignes_gardees, importe_le) VALUES (?,?,?,?,?,?,?,?,?,?)',
+                              (sid, lg['nom'], lg['empreinte'], lg['serie'], ts[0], ts[-1] + pas, pas,
+                               len(ts), len(gardees), maintenant())).lastrowid
+            if gardees:
+                cur.executemany('INSERT OR REPLACE INTO couverture VALUES (?,?,?,?)', [(sid, a, b, fid) for a, b in plages])
+                if lg['serie'] and (not serie_sys or forcer_serie):
+                    cur.execute('UPDATE systemes SET serie=? WHERE id=?', (lg['serie'], sid))
+                self._ecrire_points(cur, sid, lots)          # en dernier (dans un lot : simple mise en mémoire)
+        except BaseException:
+            cur.execute('ROLLBACK TO import_fichier')
+            cur.execute('RELEASE import_fichier')
+            raise
+        cur.execute('RELEASE import_fichier')
         self._valider()
         self._cache_cat.clear()
         self._cache_blocs.clear()
+        if not gardees:
+            return dict(rap, statut='deja_couvert', message='Toutes les lignes étaient déjà importées.',
+                        t_debut=ts[0], t_fin=ts[-1] + pas)
         if len(gardees) < len(ts):
             rap['avertissements'].append(f'{len(ts) - len(gardees)} lignes déjà présentes ont été ignorées.')
         return dict(rap, statut='importe', message=f'{len(gardees)} lignes importées.',
@@ -867,6 +967,9 @@ class Magasin:
         if self._lot is not None:            # lot déjà ouvert : on s'y joint
             yield self
             return
+        if self.cx.in_transaction:
+            self.cx.commit()
+        self.cx.execute('BEGIN')
         self._lot = {}
         try:
             yield self

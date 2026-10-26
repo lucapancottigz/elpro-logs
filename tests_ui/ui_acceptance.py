@@ -13,13 +13,15 @@ sys.path.insert(0, os.path.join(RACINE, 'engine'))
 sys.path.insert(0, os.path.join(RACINE, 'tools'))
 
 from PySide6.QtCore import QSettings, QCoreApplication, Qt  # noqa: E402
-from PySide6.QtWidgets import QApplication, QMessageBox, QFileDialog, QInputDialog, QToolTip  # noqa: E402
+from PySide6.QtWidgets import (QApplication, QMessageBox, QFileDialog, QInputDialog, QToolTip,  # noqa: E402
+                               QAbstractButton, QToolBar)
 from PySide6.QtGui import QColor  # noqa: E402
 
 import elpro_logs as L  # noqa: E402
 import make_demo_logs as G  # noqa: E402
 import pyqtgraph as pg  # noqa: E402
 from ui import dialogs  # noqa: E402
+from ui import main_window as MW  # noqa: E402
 from ui.main_window import MainWindow  # noqa: E402
 from ui.workers import attendre_tous  # noqa: E402
 import elpro_remote as R  # noqa: E402
@@ -112,7 +114,7 @@ LOGS = sorted(glob.glob(os.path.join(EX, 'logs', '*.log')))
 
 def fenetre(nom_base):
     chemin = os.path.join(TMP, nom_base)
-    f = MainWindow(RACINE, chemin, L.Magasin(chemin))
+    f = MainWindow(RACINE, L.Magasin(chemin))
     f.show()
     QApplication.processEvents()
     return f
@@ -532,6 +534,76 @@ def main():
     acc = f.magasin.acces(tab.sid)
     verifier(acc['adresse'] == adresse and acc['utilisateur'] == 'user' and tab.mode == 'defaut',
              'W7 connexion conservée au redémarrage, période par défaut')
+
+    print('== Barre d\'outils et emplacement des données (v1.3)')
+    bo = f.barre_outils
+    verifier(bo.actions()[0] is f.action_tout_recuperer and f.toolBarArea(bo) == Qt.TopToolBarArea and not bo.isMovable()
+             and bo.toolButtonStyle() == Qt.ToolButtonTextBesideIcon and bo.isVisible(),
+             'E1 « Tout récupérer » dans la barre d\'outils en haut, avec son texte')
+    boutons_onglets = [b.text() for k in range(f.onglets.count())
+                       for b in f.onglets.widget(k).findChildren(QAbstractButton)]
+    verifier('Tout récupérer' not in boutons_onglets and len(f.findChildren(QToolBar)) == 1,
+             'E1 absent des onglets, une seule barre d\'outils')
+    f._occuper(True)
+    de = dialogs.EmplacementDonnees(f)
+    verifier(not f.action_tout_recuperer.isEnabled() and not any(b.isEnabled() for b in de.boutons),
+             'pendant un import ou une récupération : Tout récupérer et Emplacement des données grisés')
+    f._occuper(False)
+    de.actualiser()
+    nb, actif, ancien = len(f.magasin.systemes()), f.onglet_actif().sid, f.chemin_base
+    verifier(all(b.isEnabled() for b in de.boutons) and de.chemin.text() == os.path.abspath(ancien)
+             and de.taille.text().endswith(f'{nb} systèmes'), f'dialogue : emplacement, taille ({de.taille.text()})')
+    dossier = os.path.join(TMP, 'Données déplacées')
+    deplacee = os.path.join(dossier, L.NOM_BASE)
+    verifier(f.deplacer_base(dossier) and MW.meme_fichier(f.chemin_base, deplacee) and f.onglets.count() == nb
+             and f.onglet_actif().sid == actif and not os.path.exists(ancien),
+             'E2 base déplacée, onglets rechargés (même onglet actif), ancien fichier supprimé')
+    verifier(QSettings().value(MW.CLE_BASE) == os.path.abspath(deplacee), 'E2 emplacement mémorisé')
+    MESSAGES.clear()
+    REPONSES['question'] = QMessageBox.No
+    taille = os.path.getsize(deplacee)
+    verifier(not f.deplacer_base(dossier) and any('existe déjà' in m[2] for m in MESSAGES)
+             and os.path.getsize(deplacee) == taille, 'déplacer vers un dossier qui a déjà une base : jamais d\'écrasement')
+    REPONSES['question'] = QMessageBox.Yes
+    f.close()
+    m = MW.ouvrir_base_demarrage()
+    f = MainWindow(RACINE, m)
+    verifier(MW.meme_fichier(f.chemin_base, deplacee) and f.onglets.count() == nb
+             and f.magasin.acces(1)['adresse'] == adresse, 'E3 relance : base du nouvel emplacement, systèmes et connexion')
+    sauv = os.path.join(TMP, 'sauvegarde.db')
+    verifier(f.sauvegarder_base(sauv) and L.verifier_base(sauv)['nb_systemes'] == nb
+             and MESSAGES[-1][2].startswith('Copie enregistrée'), 'E5 copie de sauvegarde, application ouverte')
+    verifier(not f.sauvegarder_base(sauv) and 'existe déjà' in MESSAGES[-1][2], 'copie de sauvegarde : jamais d\'écrasement')
+    verifier(f.ouvrir_base_existante(sauv) and MW.meme_fichier(f.chemin_base, sauv) and f.onglets.count() == nb,
+             'E5 ouvrir la copie : mêmes systèmes')
+    f.ouvrir_base_existante(deplacee)
+    f.close()
+    choisir, appels = MW.choisir_base, []
+    absent = dossier + ' (débranché)'
+    os.rename(dossier, absent)
+    MW.choisir_base = lambda message, reessayer: appels.append((message, reessayer)) or 'quitter'
+    verifier(MW.ouvrir_base_demarrage() is None and appels and 'introuvable' in appels[0][0] and appels[0][1]
+             and not os.path.exists(dossier), 'E4 base introuvable au démarrage : fenêtre de choix, aucune base vide créée')
+
+    def rebrancher(message, reessayer):
+        appels.append((message, reessayer))
+        os.rename(absent, dossier)
+        return 'reessayer'
+    MW.choisir_base = rebrancher
+    m = MW.ouvrir_base_demarrage()
+    verifier(m is not None and MW.meme_fichier(m.chemin, deplacee) and len(m.systemes()) == nb,
+             'E4 disque rebranché puis Réessayer : tout revient')
+    m.fermer()
+    abimee = os.path.join(TMP, 'abimee.db')
+    open(abimee, 'wb').write(b'pas une base' * 100)
+    QSettings().setValue(MW.CLE_BASE, abimee)
+    appels.clear()
+    MW.choisir_base = lambda message, reessayer: appels.append((message, reessayer)) or 'quitter'
+    verifier(MW.ouvrir_base_demarrage() is None and appels and 'pas une base ELPRO Logs' in appels[0][0]
+             and not appels[0][1], 'base endommagée au démarrage : message du moteur, sans « Réessayer »')
+    MW.choisir_base = choisir
+    QSettings().setValue(MW.CLE_BASE, deplacee)
+    f = MainWindow(RACINE, MW.ouvrir_base_demarrage())
 
     print('== Aide et À propos')
     a = dialogs.AideListeLog(f)

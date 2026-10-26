@@ -16,8 +16,9 @@ S'il n'y a encore aucun système : page d'accueil avec un grand bouton **« Ajou
 |---|---|---|
 | Fichier | Ajouter un système (.elpro.json)… | Choix du fichier → `m.ajouter_config(json)`. Statut `nouveau` : nouvel onglet, sélectionné. `version` : voir *Mettre à jour la configuration*. `identique` : « Ce système est déjà dans l'application. » et l'onglet est sélectionné. `ValueError` : afficher le message. |
 | Fichier | Importer des logs… (`Ctrl+I`) | Pour le système de l'onglet actif. Sélection multiple de `.log`, `.zip`, `.csv`. Voir § 7. |
-| Fichier | Tout récupérer (`Ctrl+Maj+R`, aussi dans la barre d'outils) | `R.recuperer_tout(...)` dans un `QThread` ; progression « <système> — fichier n / total » ; Annuler arrête après le fichier en cours. Rapport : une ligne par système (Système, Résultat, Nouveaux fichiers, Message), `alerte` en orange sous la ligne. Une centrale `mauvaise_centrale` n'est pas forcée. Puis rafraîchir tous les onglets. Grisé si aucun système n'a de connexion configurée. (v1.1) |
+| Fichier | Tout récupérer (`Ctrl+Maj+R`, aussi dans la barre d'outils principale) | `R.recuperer_tout(...)` dans un `QThread` ; progression « <système> — fichier n / total » ; Annuler arrête après le fichier en cours. Rapport : une ligne par système (Système, Résultat, Nouveaux fichiers, Message), `alerte` en orange sous la ligne. Une centrale `mauvaise_centrale` n'est pas forcée. Puis rafraîchir tous les onglets. Grisé si aucun système n'a de connexion configurée. (v1.1) |
 | Fichier | Exporter en CSV… | Exporte les canaux cochés dans l'onglet Détail sur la période affichée (`m.exporter_csv`). Grisé hors de l'onglet Détail ou si rien n'est coché. |
+| Fichier | Emplacement des données… | Voir § 9. (v1.3) |
 | Fichier | Quitter | — |
 | Système | Récupérer les logs (`Ctrl+R`) | Voir § 8. (v1.1) |
 | Système | Connexion à la centrale… | Voir § 8. (v1.1) |
@@ -27,6 +28,10 @@ S'il n'y a encore aucun système : page d'accueil avec un grand bouton **« Ajou
 | Système | Supprimer ce système… | Double confirmation (« Toutes les valeurs importées de ce système seront effacées. ») → `m.supprimer_systeme(sid)` puis `m.compacter_base()`. |
 | Aide | Liste de log à configurer sur la centrale | Fenêtre avec `L.REGLAGES_STANDARD` et le tableau `L.LISTE_STANDARD` (Nom, 1er registre, Nombre), bouton Copier. |
 | Aide | À propos | Comme ELPRO Config : nom, version, copyright, site, licences tierces. |
+
+### Barre d'outils principale (v1.3)
+
+En haut de la fenêtre, juste sous les menus, non déplaçable, visible quel que soit l'onglet. Premier bouton : **Tout récupérer**, icône et texte, info-bulle « Récupérer les logs de toutes les centrales configurées (Ctrl+Maj+R) ». Ce bouton n'apparaît nulle part ailleurs (ni dans les onglets, ni dans une autre barre). Grisé si aucun système n'a de connexion configurée, ou pendant un import ou une récupération. « Récupérer les logs » (un seul système) reste dans le bandeau de chaque onglet.
 
 **Glisser-déposer** : des `.log`/`.zip`/`.csv` déposés sur la fenêtre sont importés dans le système de l'onglet actif ; un `.elpro.json` déposé ajoute un système.
 
@@ -208,3 +213,18 @@ Les `avertissements` s'affichent sous la ligne du fichier, en orange.
 | `injoignable`, `introuvable`, `erreur` | Erreur : `message` |
 | `acces_refuse`, `non_configure` | Erreur : `message` + bouton **Connexion à la centrale…** |
 | `mauvaise_centrale` | Question : `message` + « Importer quand même dans ce système ? » (**Non** par défaut). Oui → `R.recuperer(m, sid, forcer=True, …)` |
+
+## 9. Emplacement des données (v1.3)
+
+*Fichier › Emplacement des données…* : boîte de dialogue `EmplacementDonnees` (`ui/dialogs.py`), actions faites par la fenêtre principale. **Tous les boutons sont grisés pendant un import ou une récupération.**
+
+| Élément | Contenu |
+|---|---|
+| Emplacement actuel | `m.chemin` (sélectionnable) + bouton **Ouvrir le dossier** (Explorateur) |
+| Taille | `m.taille_fichier()` en Mo, nombre de systèmes |
+| **Déplacer vers un autre dossier…** | Choix d'un dossier → `<dossier>\elpro_logs.db`. Avertissement de `L.avertissement_emplacement()` (réseau, OneDrive…) : « Continuer quand même ? » (Non par défaut). Base déjà présente : « L'ouvrir à la place ? », jamais d'écrasement. `L.copier_base()` dans un `QThread` (barre d'attente), puis ouverture de la copie, clé `base/chemin` enregistrée, onglets rechargés (même onglet actif). Enfin « Supprimer l'ancien fichier ? » (Non par défaut ; Oui supprime aussi `-wal` et `-shm`). Échec : message, l'ancienne base reste active. |
+| **Ouvrir une base existante…** | Filtre « Base ELPRO Logs (*.db) » → `L.verifier_base()` ; si valide : « Ouvrir cette base (n systèmes) ? Les systèmes de la base actuelle ne seront plus affichés (ils restent dans son fichier). » ; sinon son message. |
+| **Faire une copie de sauvegarde…** | Nom proposé `elpro_logs_sauvegarde_AAAA-MM-JJ.db` → `L.copier_base()` (application ouverte) → « Copie enregistrée (x Mo). » Un fichier existant n'est jamais remplacé. |
+| **Revenir à l'emplacement par défaut** | Grisé si la base est déjà à l'emplacement par défaut. Ouvre la base par défaut si elle existe (comme *Ouvrir une base existante*), sinon propose d'y **déplacer** la base actuelle. La clé `base/chemin` est effacée. |
+
+Démarrage avec une base introuvable ou inutilisable : voir `01_Architecture.md`, *Démarrage*.

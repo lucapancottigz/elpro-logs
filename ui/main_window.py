@@ -4,31 +4,99 @@
 glisser-déposer, récupération des logs depuis les centrales, barre d'état (taille de la base, copyright)."""
 import os, sqlite3
 
-from PySide6.QtCore import Qt, QSettings, QStandardPaths
+from PySide6.QtCore import Qt, QSettings, QStandardPaths, QEventLoop
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (QMainWindow, QTabWidget, QStackedWidget, QWidget, QVBoxLayout, QLabel, QPushButton,
-                               QFileDialog, QMessageBox, QInputDialog, QProgressDialog, QToolBar)
+                               QFileDialog, QMessageBox, QInputDialog, QProgressDialog, QToolBar, QStyle)
 
 import elpro_engine as M
 import elpro_logs as L
-from ui.common import lire_projet, cle_systeme, projet_normalise
+from ui.common import lire_projet, cle_systeme, projet_normalise, pluriel, nombre
 from ui.dialogs import (AboutDialog, ProgressionImport, RapportImport, DateMiseEnService, AideListeLog,
-                        site_affiche, ConnexionCentrale, ProgressionRecuperation, RapportRecuperationTout)
+                        site_affiche, ConnexionCentrale, ProgressionRecuperation, RapportRecuperationTout,
+                        EmplacementDonnees, FILTRE_BASE)
 from ui.system_tab import SystemTab
-from ui.workers import Tache, attendre_tous
+from ui.workers import Tache, Fonction, attendre_tous
 from version import APP_COMPANY, APP_COPYRIGHT, APP_WEBSITE
 
 FILTRE_PROJET = 'Projet ELPRO Config (*.elpro.json *.json)'
 FILTRE_LOGS = 'Logs ELPRO (*.log *.zip *.csv);;Tous les fichiers (*)'
 EXT_LOGS = ('.log', '.zip', '.csv')
+CLE_BASE = 'base/chemin'                    # QSettings : emplacement choisi ; absent = emplacement par défaut
+
+
+def meme_fichier(a, b):
+    return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
+
+
+def memoriser_base(chemin):
+    """Enregistre l'emplacement de la base (l'emplacement par défaut efface la clé)."""
+    if meme_fichier(chemin, L.chemin_base_defaut()):
+        QSettings().remove(CLE_BASE)
+    else:
+        QSettings().setValue(CLE_BASE, os.path.abspath(chemin))
+
+
+def choisir_base(message, reessayer):
+    """Fenêtre « base introuvable / inutilisable » -> 'reessayer' | 'ouvrir' | 'defaut' | 'quitter'."""
+    b = QMessageBox(QMessageBox.Critical, 'ELPRO Logs', message)
+    choix = {}
+    if reessayer:
+        choix[b.addButton('Réessayer', QMessageBox.AcceptRole)] = 'reessayer'
+    choix[b.addButton('Ouvrir une autre base…', QMessageBox.ActionRole)] = 'ouvrir'
+    choix[b.addButton('Utiliser l\'emplacement par défaut', QMessageBox.ActionRole)] = 'defaut'
+    quitter = b.addButton('Quitter', QMessageBox.RejectRole)
+    b.setEscapeButton(quitter)
+    b.exec()
+    return choix.get(b.clickedButton(), 'quitter')
+
+
+def ouvrir_base_demarrage():
+    """Ouvre la base au démarrage (emplacement mémorisé, sinon par défaut). Ne crée JAMAIS de base vide à un
+    emplacement choisi qui a disparu (clé USB retirée, lecteur réseau absent…). None = l'utilisateur quitte."""
+    while True:
+        chemin = QSettings().value(CLE_BASE) or None
+        c = chemin or L.chemin_base_defaut()
+        try:
+            return L.Magasin(chemin, creer=False) if chemin else L.Magasin(c)
+        except FileNotFoundError:
+            message, reessayer = (f'La base de données est introuvable :\n{c}\n\nLe dossier est peut-être sur un '
+                                  'disque ou un lecteur réseau non connecté.'), True
+        except Exception as e:                  # version plus récente, base endommagée, fichier verrouillé…
+            v = L.verifier_base(c)
+            if v['ok']:                         # base saine : souci passager (autre fenêtre ouverte, verrou)
+                message, reessayer = (f'Impossible d\'ouvrir la base de données :\n{c}\n\n{e}\n\n'
+                                      'Fermez les autres fenêtres d\'ELPRO Logs, puis réessayez.'), True
+            else:
+                message, reessayer = f'Impossible d\'ouvrir la base de données :\n{c}\n\n{v["message"]}', False
+        choix = choisir_base(message, reessayer)
+        if choix == 'reessayer':
+            continue
+        if choix == 'ouvrir':
+            f, _ = QFileDialog.getOpenFileName(None, 'Ouvrir une base existante', os.path.dirname(c), FILTRE_BASE)
+            if f:
+                v = L.verifier_base(f)
+                if v['ok']:
+                    memoriser_base(f)
+                else:
+                    QMessageBox.warning(None, 'Ouvrir une base existante', v['message'])
+            continue
+        if choix == 'defaut':
+            if QMessageBox.question(None, 'Utiliser l\'emplacement par défaut',
+                                    f'Ouvrir ou créer la base à l\'emplacement par défaut ?\n{L.chemin_base_defaut()}'
+                                    '\n\nVos systèmes et données enregistrés à l\'ancien emplacement n\'y seront pas.'
+                                    ) == QMessageBox.Yes:
+                QSettings().remove(CLE_BASE)
+            continue
+        return None
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, base, chemin_base, magasin):
+    def __init__(self, base, magasin):
         super().__init__()
         self.base = base
-        self.chemin_base = chemin_base
         self.magasin = magasin
+        self.occupe = False                 # import ou récupération en cours
         self.setWindowTitle('ELPRO Logs')
         self.resize(1400, 900)
         self.setAcceptDrops(True)
@@ -101,7 +169,10 @@ class MainWindow(QMainWindow):
         self.action_importer = action(mf, 'Importer des logs…', self.importer_logs, QKeySequence('Ctrl+I'))
         self.action_exporter = action(mf, 'Exporter en CSV…', self.exporter_csv)
         self.action_tout_recuperer = action(mf, 'Tout récupérer', self.tout_recuperer, QKeySequence('Ctrl+Shift+R'))
-        self.action_tout_recuperer.setToolTip('Récupère les logs de toutes les centrales dont la connexion est configurée')
+        self.action_tout_recuperer.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
+        self.action_tout_recuperer.setToolTip('Récupérer les logs de toutes les centrales configurées (Ctrl+Maj+R)')
+        mf.addSeparator()
+        action(mf, 'Emplacement des données…', self.emplacement_donnees)
         mf.addSeparator()
         action(mf, 'Quitter', self.close, QKeySequence.Quit)
 
@@ -117,11 +188,12 @@ class MainWindow(QMainWindow):
         self.actions_systeme += [action(ms, 'Renommer…', self.renommer),
                                  action(ms, 'Supprimer ce système…', self.supprimer)]
 
-        outils = QToolBar('Récupération')
-        outils.setMovable(False)
-        outils.setToolButtonStyle(Qt.ToolButtonTextOnly)
-        outils.addAction(self.action_tout_recuperer)
-        self.addToolBar(outils)
+        self.barre_outils = QToolBar('Barre d\'outils principale')
+        self.barre_outils.setObjectName('barre_principale')
+        self.barre_outils.setMovable(False)
+        self.barre_outils.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.barre_outils.addAction(self.action_tout_recuperer)
+        self.addToolBar(Qt.TopToolBarArea, self.barre_outils)
 
         ma = self.menuBar().addMenu('&Aide')
         action(ma, 'Liste de log à configurer sur la centrale', lambda: AideListeLog(self).exec())
@@ -158,8 +230,8 @@ class MainWindow(QMainWindow):
         self.action_importer.setEnabled(a)
         for x in self.actions_systeme:
             x.setEnabled(a)
-        self.action_tout_recuperer.setEnabled(any((self.magasin.acces(s['id']) or {}).get('adresse')
-                                                  for s in self.magasin.systemes()))
+        self.action_tout_recuperer.setEnabled(not self.occupe and any((self.magasin.acces(s['id']) or {}).get('adresse')
+                                                                      for s in self.magasin.systemes()))
         self._maj_export()
         self._maj_taille()
 
@@ -175,10 +247,19 @@ class MainWindow(QMainWindow):
         self.taille.setText(f'Base : {mo:.1f} Mo'.replace('.', ','))
         self.taille.setToolTip(self.chemin_base)
 
+    @property
+    def chemin_base(self):
+        """Base en cours : tous les threads ouvrent leur propre instance sur ce chemin."""
+        return self.magasin.chemin
+
     def reouvrir_base(self):
         """Après un import fait par un autre thread : nouvelle connexion (caches de lecture à jour)."""
         self.magasin.fermer()
-        self.magasin = L.Magasin(self.chemin_base)
+        self.magasin = L.Magasin(self.chemin_base, creer=False)
+
+    def _occuper(self, occupe):
+        self.occupe = occupe
+        self._maj_etat()
 
     # ================================================================ dossiers mémorisés
     @staticmethod
@@ -363,9 +444,13 @@ class MainWindow(QMainWindow):
             return
         if not self.magasin.acces(tab.sid) and not self.connexion_centrale(tab):
             return
-        d = ProgressionRecuperation(self, self.chemin_base, tab.sid, forcer)
-        d.exec()
-        d.thread.wait()
+        self._occuper(True)
+        try:
+            d = ProgressionRecuperation(self, self.chemin_base, tab.sid, forcer)
+            d.exec()
+            d.thread.wait()
+        finally:
+            self._occuper(False)
         rap = d.rapport
         self.reouvrir_base()
         tab.rafraichir(apres_import=True)
@@ -399,9 +484,13 @@ class MainWindow(QMainWindow):
     def tout_recuperer(self):
         if not self.action_tout_recuperer.isEnabled():
             return
-        d = ProgressionRecuperation(self, self.chemin_base)
-        d.exec()
-        d.thread.wait()
+        self._occuper(True)
+        try:
+            d = ProgressionRecuperation(self, self.chemin_base)
+            d.exec()
+            d.thread.wait()
+        finally:
+            self._occuper(False)
         self.reouvrir_base()
         for k in range(self.onglets.count()):
             self.onglets.widget(k).rafraichir(apres_import=True)
@@ -444,9 +533,13 @@ class MainWindow(QMainWindow):
         self.rapport.exec()
 
     def _importer(self, tab, fichiers):
-        d = ProgressionImport(self, self.chemin_base, tab.sid, fichiers)
-        d.exec()
-        d.thread.wait()
+        self._occuper(True)
+        try:
+            d = ProgressionImport(self, self.chemin_base, tab.sid, fichiers)
+            d.exec()
+            d.thread.wait()
+        finally:
+            self._occuper(False)
         return d.resultats, d.thread.annule and len(d.resultats) < len(fichiers)
 
     # ================================================================ export CSV
@@ -483,6 +576,128 @@ class MainWindow(QMainWindow):
         tache.echec.connect(echec)
         self.tache_export = tache
         tache.start()
+
+    # ================================================================ emplacement des données (v1.3)
+    def emplacement_donnees(self):
+        EmplacementDonnees(self).exec()
+
+    def est_par_defaut(self):
+        return meme_fichier(self.chemin_base, L.chemin_base_defaut())
+
+    def _en_attente(self, texte, fonction):
+        """fonction() dans un thread, avec une barre d'attente ; renvoie son résultat ou relève son exception."""
+        res = {}
+        t = Fonction(fonction)
+        t.termine.connect(lambda r: res.update(ok=r))
+        t.echec.connect(lambda e: res.update(erreur=e))
+        attente = QProgressDialog(texte, None, 0, 0, self)
+        attente.setWindowModality(Qt.WindowModal)
+        attente.setMinimumDuration(300)
+        boucle = QEventLoop()
+        t.finished.connect(boucle.quit)
+        t.start()
+        boucle.exec()
+        attente.close()
+        if 'erreur' in res:
+            raise res['erreur']
+        return res.get('ok')
+
+    def changer_base(self, chemin):
+        """Ouvre la base `chemin` (elle doit exister) à la place de l'actuelle et recharge les onglets.
+        En cas d'échec, l'exception remonte et la base actuelle reste active."""
+        attendre_tous()
+        nouveau = L.Magasin(chemin, creer=False)
+        tab = self.onglet_actif()
+        actif = tab.sid if tab is not None else None
+        self.magasin.fermer()
+        self.magasin = nouveau
+        memoriser_base(chemin)
+        while self.onglets.count():
+            tab = self.onglets.widget(0)
+            self.onglets.removeTab(0)
+            tab.deleteLater()
+        for s in self.magasin.systemes():
+            tab = self._ajouter_onglet(s)
+            if s['id'] == actif:
+                self.onglets.setCurrentWidget(tab)
+        self._maj_etat()
+
+    def deplacer_base(self, dossier):
+        """Copie la base dans `dossier`, l'ouvre à la place de l'actuelle, puis propose de supprimer l'ancienne."""
+        titre = 'Déplacer la base'
+        dest = os.path.join(dossier, L.NOM_BASE)
+        avert = L.avertissement_emplacement(dest)
+        if avert and QMessageBox.question(self, titre, f'{avert}\n\nContinuer quand même ?',
+                                          QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+            return False
+        if os.path.exists(dest):                  # jamais d'écrasement
+            if QMessageBox.question(self, titre, f'Une base existe déjà dans ce dossier :\n{dest}\n\n'
+                                    'L\'ouvrir à la place ?') == QMessageBox.Yes:
+                return self.ouvrir_base_existante(dest)
+            return False
+        ancien = self.chemin_base
+        attendre_tous()
+        try:
+            self._en_attente('Copie de la base…', lambda: L.copier_base(ancien, dest))
+            self.changer_base(dest)
+        except Exception as e:
+            QMessageBox.critical(self, titre, f'La base n\'a pas été déplacée (l\'ancienne reste utilisée) :\n{e}')
+            return False
+        if QMessageBox.question(self, titre, f'La base a été déplacée.\n\nSupprimer l\'ancien fichier {ancien} ?',
+                                QMessageBox.Yes | QMessageBox.No, QMessageBox.No) == QMessageBox.Yes:
+            try:
+                for suf in ('', '-wal', '-shm'):
+                    if os.path.exists(ancien + suf):
+                        os.remove(ancien + suf)
+            except OSError as e:
+                QMessageBox.warning(self, titre, f'Impossible de supprimer l\'ancien fichier :\n{e}')
+        self._maj_taille()
+        return True
+
+    def ouvrir_base_existante(self, chemin):
+        titre = 'Ouvrir une base existante'
+        if meme_fichier(chemin, self.chemin_base):
+            QMessageBox.information(self, titre, 'Cette base est déjà ouverte.')
+            return False
+        v = L.verifier_base(chemin)
+        if not v['ok']:
+            QMessageBox.warning(self, titre, v['message'])
+            return False
+        if QMessageBox.question(self, titre, f"Ouvrir cette base ({pluriel(v['nb_systemes'], 'système')}) ?\n\n"
+                                'Les systèmes de la base actuelle ne seront plus affichés (ils restent dans son fichier).'
+                                ) != QMessageBox.Yes:
+            return False
+        try:
+            self.changer_base(chemin)
+        except Exception as e:
+            QMessageBox.critical(self, titre, f'Impossible d\'ouvrir cette base :\n{e}')
+            return False
+        self._maj_taille()
+        return True
+
+    def sauvegarder_base(self, chemin):
+        titre = 'Copie de sauvegarde'
+        try:
+            taille = self._en_attente('Copie de sauvegarde…', lambda: L.copier_base(self.chemin_base, chemin))
+        except FileExistsError:
+            QMessageBox.warning(self, titre, f'Ce fichier existe déjà, il n\'a pas été remplacé :\n{chemin}')
+            return False
+        except Exception as e:
+            QMessageBox.critical(self, titre, f'La copie a échoué :\n{e}')
+            return False
+        QMessageBox.information(self, titre, f'Copie enregistrée ({nombre(round(taille / 1e6, 1))} Mo).')
+        return True
+
+    def revenir_defaut(self):
+        """Ouvre la base de l'emplacement par défaut si elle existe, sinon propose d'y déplacer la base actuelle."""
+        defaut = L.chemin_base_defaut()
+        if os.path.isfile(defaut):
+            return self.ouvrir_base_existante(defaut)
+        if QMessageBox.question(self, 'Revenir à l\'emplacement par défaut',
+                                f'Il n\'y a pas de base à l\'emplacement par défaut :\n{defaut}\n\n'
+                                'Y déplacer la base actuelle ?') == QMessageBox.Yes:
+            return self.deplacer_base(os.path.dirname(defaut))
+        return False
 
     # ================================================================ glisser-déposer
     def dragEnterEvent(self, e):

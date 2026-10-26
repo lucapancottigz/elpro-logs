@@ -317,5 +317,69 @@ class TestV12(Base):
         self.assertIsNone(m3.periode(s3))                     # rien n'a été gardé
         self.assertEqual(m3.fichiers(s3), [])
 
+
+class TestV13(Base):
+    """Moteur v1.3 : import atomique par fichier, emplacement de la base."""
+
+    def test_fichier_qui_plante_hors_lot(self):
+        m, sid = self.nouveau('v13a.db')
+        vrai = m._ecrire_points
+        m._ecrire_points = lambda *a: (_ for _ in ()).throw(RuntimeError('plantage'))
+        with self.assertRaises(RuntimeError):
+            m.importer_fichier(sid, self.logs[0])
+        m._ecrire_points = vrai
+        m.importer_fichier(sid, self.logs[1])                 # commit suivant : ne doit rien entraîner du 1er
+        self.assertEqual([f['nom'] for f in m.fichiers(sid)], [os.path.basename(self.logs[1])])
+        self.assertEqual(m.importer_fichier(sid, self.logs[0])[0]['statut'], 'importe')
+
+    def test_fichier_qui_plante_dans_un_lot(self):
+        m, sid = self.nouveau('v13b.db')
+        vrai = m._ecrire_points
+
+        def parfois(cur, s, lots):
+            if m._casse:
+                raise RuntimeError('plantage')
+            return vrai(cur, s, lots)
+        m._ecrire_points = parfois
+        with m.lot():
+            for k, p in enumerate(self.logs):
+                m._casse = (k == 1)
+                try:
+                    m.importer_fichier(sid, p)
+                except RuntimeError:
+                    pass                                      # l'interface note l'erreur et continue
+        noms = sorted(f['nom'] for f in m.fichiers(sid))
+        self.assertEqual(noms, sorted(os.path.basename(p) for p in (self.logs[0], self.logs[2])))
+        self.assertEqual(len(m.trous(sid, *m.periode(sid))), 1)  # le jour du fichier raté manque, rien d'autre
+        m._casse = False
+        self.assertEqual(m.importer_fichier(sid, self.logs[1])[0]['statut'], 'importe')
+        self.assertEqual(m.trous(sid, *m.periode(sid)), [])
+
+    def test_copier_et_verifier_base(self):
+        m, sid = self.nouveau('v13c.db')
+        m.importer_fichier(sid, self.logs[0])
+        dest = os.path.join(self.tmp, 'ailleurs', 'elpro_logs.db')
+        if os.path.exists(dest):
+            os.remove(dest)
+        self.assertGreater(L.copier_base(m.chemin, dest), 0)
+        self.assertTrue(L.verifier_base(dest)['ok'])
+        self.assertEqual(L.verifier_base(dest)['nb_systemes'], 1)
+        m2 = L.Magasin(dest, creer=False)
+        self.addCleanup(m2.fermer)
+        self.assertEqual(m2.periode(sid), m.periode(sid))
+        with self.assertRaises(FileExistsError):
+            L.copier_base(m.chemin, dest)
+        faux = os.path.join(self.tmp, 'pas_une_base.db')
+        open(faux, 'w').write('bonjour')
+        self.assertFalse(L.verifier_base(faux)['ok'])
+        self.assertFalse(L.verifier_base(os.path.join(self.tmp, 'absent.db'))['ok'])
+        with self.assertRaises(FileNotFoundError):
+            L.Magasin(os.path.join(self.tmp, 'absent.db'), creer=False)
+
+    def test_avertissement_emplacement(self):
+        self.assertIsNotNone(L.avertissement_emplacement('//serveur/partage/elpro_logs.db'))
+        self.assertIn('synchronisé', L.avertissement_emplacement('/home/x/OneDrive - Geo/elpro_logs.db'))
+        self.assertIsNone(L.avertissement_emplacement(os.path.join(self.tmp, 'elpro_logs.db')))
+
 if __name__ == '__main__':
     unittest.main()

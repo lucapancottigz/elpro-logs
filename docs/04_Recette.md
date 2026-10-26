@@ -5,7 +5,7 @@
 ```
 .\venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
-Attendu : `Ran 40 tests … OK` (27 tests du moteur + 13 de la récupération, v1.2). À lancer dans `build.bat` avant l'empaquetage, comme pour ELPRO Config (arrêt si échec).
+Attendu : `Ran 44 tests … OK` (31 tests du moteur + 13 de la récupération, v1.3). À lancer dans `build.bat` avant l'empaquetage, comme pour ELPRO Config (arrêt si échec).
 
 ## 2. Jeu de démonstration
 
@@ -110,3 +110,18 @@ Sur Windows :
 | V1 | Importer à la main une vingtaine de `.log` d'un coup | Nettement plus rapide qu'en 1.1 ; résultat identique | |
 | V2 | Pendant une récupération, couper le tunnel WireGuard | « Centrale injoignable … Arrêt après k fichier(s) … » ; les k fichiers sont dans l'onglet Fichiers ; relancer le tunnel puis Récupérer : la suite arrive | |
 | V3 | Tout récupérer avec une centrale injoignable en premier | Les centrales suivantes sont récupérées ; une ligne de rapport par système | |
+
+## 5. Barre d'outils et emplacement des données (v1.3)
+
+Automatique : `tests_ui\ui_acceptance.py` vérifie « Tout récupérer » dans la barre d'outils principale (en haut, avec texte, absent des onglets), les boutons grisés pendant un import ou une récupération, le déplacement de la base dans un dossier temporaire (onglets rechargés, ancien fichier supprimé, chemin mémorisé), le refus d'écraser une base existante, la relance (même base, systèmes et connexion), la copie de sauvegarde et son ouverture, la base introuvable au démarrage (fenêtre de choix, aucune base vide créée, Réessayer une fois le dossier revenu) et une base endommagée (sans Réessayer).
+
+Sur Windows :
+
+| # | Contrôle | Attendu | OK |
+|---|---|---|---|
+| E1 | « Tout récupérer » | En haut de la fenêtre, avec son texte, visible sur tous les onglets ; plus dans les onglets | |
+| E2 | Fichier › Emplacement des données › Déplacer vers un autre dossier (ex. `D:\ELPRO Logs`) | Base copiée, onglets rechargés à l'identique ; question « Supprimer l'ancien fichier ? » | |
+| E3 | Fermer et relancer | La base du nouvel emplacement s'ouvre, tous les systèmes et connexions sont là (mot de passe non redemandé) | |
+| E4 | Renommer temporairement le dossier choisi en E2, relancer | Fenêtre « base introuvable » ; Quitter ; remettre le nom ; relancer : tout revient | |
+| E5 | Faire une copie de sauvegarde | Fichier créé ; « Ouvrir une base existante » sur cette copie : mêmes systèmes | |
+| E6 | Déplacer vers un dossier OneDrive ou un lecteur réseau | Avertissement affiché avant de continuer | |

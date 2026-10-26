@@ -39,7 +39,7 @@ class Tache(QThread):
     def run(self):
         m = None
         try:
-            m = L.Magasin(self.chemin_base)
+            m = L.Magasin(self.chemin_base, creer=False)
             res = self.fonction(m)
         except Exception as e:          # erreur remontée à l'interface, jamais de plantage silencieux
             traceback.print_exc()
@@ -73,7 +73,7 @@ class ImportLogs(QThread):
     def run(self):
         m = None
         try:
-            m = L.Magasin(self.chemin_base)
+            m = L.Magasin(self.chemin_base, creer=False)
         except Exception as e:
             for i, (chemin, _f) in enumerate(self.fichiers):
                 r = [{'fichier': os.path.basename(chemin), 'statut': 'erreur', 'message': str(e)}]
@@ -141,7 +141,7 @@ class RecupererLogs(QThread):
         import elpro_remote as R
         m = None
         try:
-            m = L.Magasin(self.chemin_base)
+            m = L.Magasin(self.chemin_base, creer=False)
             if self.sid is None:
                 self.rapport = R.recuperer_tout(
                     m, progression=lambda s, n, t, nom: self.avancement.emit(s, n, t, nom),

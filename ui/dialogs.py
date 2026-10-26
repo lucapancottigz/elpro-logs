@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2026 Geoazimut SàRL (https://geoazimut.com). Tous droits réservés.
 """Boîtes de dialogue : progression et rapport d'import, date d'une mise à jour de configuration,
-aide « liste de log », à propos."""
-import os, re
+aide « liste de log », à propos, emplacement des données."""
+import os, re, datetime
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QPixmap, QGuiApplication
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import QPixmap, QGuiApplication, QDesktopServices
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QProgressBar,
                                QTableWidget, QHeaderView, QDialogButtonBox, QPlainTextEdit, QMessageBox,
-                               QFormLayout, QLineEdit)
+                               QFormLayout, QLineEdit, QFileDialog)
 
 import elpro_logs as L
-from ui.common import cellule, preparer_tableau, editeur_date, utc_depuis_qdatetime, ORANGE
+from ui.common import cellule, preparer_tableau, editeur_date, utc_depuis_qdatetime, nombre, pluriel, ORANGE
 from ui.workers import ImportLogs, Fonction, RecupererLogs
 import elpro_remote as R
 from version import APP_VERSION, APP_COPYRIGHT, APP_WEBSITE
@@ -250,6 +250,85 @@ class ConnexionCentrale(QDialog):
             protege = self.acces['mdp'] if self.acces else R.proteger_mdp('')
         self.m.definir_acces(self.sid, self.adresse.text(), self.utilisateur.text() or R.UTILISATEUR_DEFAUT, protege)
         self.accept()
+
+
+FILTRE_BASE = 'Base ELPRO Logs (*.db)'
+
+
+class EmplacementDonnees(QDialog):
+    """Fichier › Emplacement des données : chemin et taille de la base, déplacer, ouvrir une autre base,
+    copie de sauvegarde, retour à l'emplacement par défaut (actions faites par la fenêtre principale)."""
+
+    def __init__(self, fenetre):
+        super().__init__(fenetre)
+        self.fenetre = fenetre
+        self.setWindowTitle('Emplacement des données')
+        self.resize(640, 260)
+        lay = QVBoxLayout(self)
+        f = QFormLayout()
+        ligne = QHBoxLayout()
+        self.chemin = QLabel()
+        self.chemin.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.chemin.setWordWrap(True)
+        ligne.addWidget(self.chemin, 1)
+        dossier = QPushButton('Ouvrir le dossier')
+        dossier.clicked.connect(lambda: QDesktopServices.openUrl(
+            QUrl.fromLocalFile(os.path.dirname(os.path.abspath(self.fenetre.chemin_base)))))
+        ligne.addWidget(dossier)
+        f.addRow('Emplacement actuel :', ligne)
+        self.taille = QLabel()
+        f.addRow('Taille :', self.taille)
+        lay.addLayout(f)
+        self.boutons = []
+        for texte, fonction in (('Déplacer vers un autre dossier…', self.deplacer),
+                                ('Ouvrir une base existante…', self.ouvrir),
+                                ('Faire une copie de sauvegarde…', self.sauvegarder),
+                                ('Revenir à l\'emplacement par défaut', self.defaut)):
+            bt = QPushButton(texte)
+            bt.clicked.connect(lambda _=False, fn=fonction: (fn(), self.actualiser()))
+            lay.addWidget(bt)
+            self.boutons.append(bt)
+        self.bouton_defaut = self.boutons[-1]
+        b = QDialogButtonBox(QDialogButtonBox.Close)
+        b.button(QDialogButtonBox.Close).setText('Fermer')
+        b.rejected.connect(self.reject)
+        lay.addWidget(b)
+        self.actualiser()
+
+    def actualiser(self):
+        fe = self.fenetre
+        self.chemin.setText(os.path.abspath(fe.chemin_base))
+        try:
+            mo = fe.magasin.taille_fichier() / 1e6
+        except OSError:
+            mo = 0
+        self.taille.setText(f"{nombre(round(mo, 1))} Mo · {pluriel(len(fe.magasin.systemes()), 'système')}")
+        for bt in self.boutons:                    # rien pendant un import ou une récupération
+            bt.setEnabled(not fe.occupe)
+        self.bouton_defaut.setEnabled(not fe.occupe and not fe.est_par_defaut())
+
+    def deplacer(self):
+        d = QFileDialog.getExistingDirectory(self, 'Déplacer la base vers…',
+                                             os.path.dirname(os.path.abspath(self.fenetre.chemin_base)))
+        if d:
+            self.fenetre.deplacer_base(d)
+
+    def ouvrir(self):
+        c, _ = QFileDialog.getOpenFileName(self, 'Ouvrir une base existante',
+                                           os.path.dirname(os.path.abspath(self.fenetre.chemin_base)), FILTRE_BASE)
+        if c:
+            self.fenetre.ouvrir_base_existante(c)
+
+    def sauvegarder(self):
+        nom = f'elpro_logs_sauvegarde_{datetime.date.today():%Y-%m-%d}.db'
+        c, _ = QFileDialog.getSaveFileName(self, 'Faire une copie de sauvegarde',
+                                           os.path.join(os.path.dirname(os.path.abspath(self.fenetre.chemin_base)), nom),
+                                           FILTRE_BASE)
+        if c:
+            self.fenetre.sauvegarder_base(c)
+
+    def defaut(self):
+        self.fenetre.revenir_defaut()
 
 
 class ProgressionRecuperation(QDialog):

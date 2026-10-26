@@ -13,7 +13,7 @@ import base64, html, socket, ctypes, urllib.request, urllib.error, http.client  
 import tzdata  # noqa: F401  (heure suisse sous Windows)
 
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication
 
 from version import APP_VERSION, APP_COPYRIGHT
 
@@ -79,16 +79,11 @@ def main():
     # logo GeoAzimut : toutes les fenêtres et boîtes de dialogue héritent de cette icône
     app.setWindowIcon(QIcon(os.path.join(BASE, 'resources', 'app_icon.png')))
 
-    import elpro_logs as L
-    from ui.main_window import MainWindow
-    chemin = L.chemin_base_defaut()
-    try:
-        magasin = L.Magasin(chemin)
-    except Exception as e:          # base d'une version plus récente, fichier verrouillé, disque inaccessible…
-        QMessageBox.critical(None, 'ELPRO Logs', f'Impossible d\'ouvrir la base de données :\n{chemin}\n\n{e}\n\n'
-                             'Fermez les autres fenêtres d\'ELPRO Logs, ou installez la dernière version.')
-        sys.exit(1)
-    f = MainWindow(BASE, chemin, magasin)
+    from ui.main_window import MainWindow, ouvrir_base_demarrage
+    magasin = ouvrir_base_demarrage()      # base introuvable ou inutilisable : fenêtre de choix, jamais de base vide
+    if magasin is None:
+        sys.exit(0)
+    f = MainWindow(BASE, magasin)
     f.show()
     autres = [a for a in sys.argv[1:] if os.path.isfile(a)]
     if autres:

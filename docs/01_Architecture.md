@@ -84,7 +84,14 @@ m.importer_fichier(sid, chemin, forcer_serie=False, progression=callback(n, tota
     # -> [rapport] ; rapport : fichier, statut, message, avertissements, (t_debut, t_fin)
     # statut : importe | deja_importe | deja_couvert | vide | erreur | serie_differente
 with m.lot():                    # imports groupés (v1.2) : chaque bloc réécrit une fois, une seule transaction
-    for chemin in chemins: m.importer_fichier(sid, chemin)    # (tout ou rien si le lot échoue)
+    for chemin in chemins: m.importer_fichier(sid, chemin)    # chaque fichier en tout ou rien (v1.3)
+
+# --- emplacement de la base (v1.3)
+L.Magasin(chemin, creer=False)       # FileNotFoundError si la base n'existe pas
+L.verifier_base(chemin)              # {'ok', 'message', 'nb_systemes', 'format'}
+L.copier_base(source, destination)   # copie cohérente + vérification ; refuse d'écraser
+L.avertissement_emplacement(chemin)  # texte si dossier réseau ou synchronisé (OneDrive…), sinon None
+L.NOM_BASE                           # 'elpro_logs.db'
 m.fichiers(sid)
 
 # --- lecture (toutes les heures en secondes UTC)
@@ -117,13 +124,14 @@ Un **canal** est un `dict` : `registre`, `nom`, `libelle`, `genre`, `famille`, `
 
 ## Threads
 
+- Tous les `QThread` (import, récupération, calculs, export) ouvrent leur instance avec **`m.chemin`** de la base en cours (`MainWindow.chemin_base`), avec `creer=False`, jamais avec `chemin_base_defaut()` (v1.3).
 - **Import** : dans un `QThread`, avec **sa propre instance** `L.Magasin(chemin)` (une connexion SQLite ne se partage pas entre threads), tous les fichiers dans un seul `with m.lot():` (v1.2). Progression par signal. Annuler = sortir de la boucle (ce qui est importé est gardé). Fermer l'instance à la fin, puis rafraîchir l'onglet.
 - **Calculs** `etat_stations`, `synthese`, `evenements` : rapides sur un mois (< 0,5 s) mais quelques secondes sur une année. Les lancer dans un `QThread` (instance `Magasin` dédiée) avec un indicateur « Calcul en cours… » ; garder en cache le dernier résultat par (système, t0, t1).
 - Courbes du Détail : `m.courbe()` est rapide (< 0,1 s par canal sur un an) ; appel direct possible.
 
 ## Démarrage
 
-1. Ouvrir `L.Magasin(L.chemin_base_defaut())`. Si l'ouverture échoue (base d'une version plus récente, fichier verrouillé) : message clair et fermeture.
+1. Ouvrir la base (`ouvrir_base_demarrage()` dans `ui/main_window.py`, v1.3) : clé `QSettings` `base/chemin` présente → `L.Magasin(chemin, creer=False)` ; absente → `L.Magasin(L.chemin_base_defaut())` (créée au besoin). **Une base introuvable n'est jamais recréée vide** : fenêtre « La base de données est introuvable… » avec **Réessayer**, **Ouvrir une autre base…**, **Utiliser l'emplacement par défaut** (confirmation : « Vos systèmes et données enregistrés à l'ancien emplacement n'y seront pas. ») et **Quitter**. Base d'une version plus récente ou endommagée : même fenêtre avec le message de `L.verifier_base()`, sans Réessayer.
 2. Créer un onglet par système de `m.systemes()`, dans cet ordre ; sélectionner le dernier onglet actif (`QSettings`).
 3. Période initiale de chaque onglet (v1.1) : `m.periode_par_defaut(sid)`, la **dernière semaine de données**, du même jour de la semaine à la même heure (ex. lundi 19.10 09:17 → lundi 12.10 09:17), en heure suisse, changement d'heure compris. Moins d'une semaine de données : toute la période. Aucune donnée : pas de période.
 4. Après un import ou une récupération : si la période affichée est la période par défaut (bouton **7 jours**) ou **Tout**, elle est recalculée pour suivre les nouvelles données ; une période choisie à la main reste en place jusqu'à la fermeture.
@@ -161,7 +169,7 @@ pyinstaller --noconfirm --windowed --name "ELPRO Logs" --icon "resources\app_ico
 
 | Fichier | Rôle | Écrit par |
 |---|---|---|
-| `Documents\ELPRO Logs\elpro_logs.db` (+ `-wal`, `-shm` pendant l'utilisation) | Base unique : systèmes, configs, valeurs | le moteur |
+| `Documents\ELPRO Logs\elpro_logs.db` (+ `-wal`, `-shm` pendant l'utilisation), ou l'emplacement choisi dans *Fichier › Emplacement des données* (clé `QSettings` `base/chemin`, v1.3) | Base unique : systèmes, configs, valeurs | le moteur |
 | `.elpro.json` | Lu à l'ajout d'un système, puis copié dans la base | ELPRO Config |
 | `.log` / `.zip` | Lus à l'import, **non conservés** (toutes les valeurs sont dans la base) | la radio |
 | `.csv` | Export des valeurs ou du journal | le moteur / l'interface |
