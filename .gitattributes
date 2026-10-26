@@ -7,3 +7,4 @@
 # Binaires
 *.png binary
 *.ttf binary
+graphify-out/graph.json merge=graphify
