@@ -21,6 +21,7 @@ import elpro_logs as L  # noqa: E402
 import make_demo_logs as G  # noqa: E402
 import pyqtgraph as pg  # noqa: E402
 from ui import dialogs  # noqa: E402
+from ui.overview_view import COLONNES as COLONNES_VG  # noqa: E402
 from ui import main_window as MW  # noqa: E402
 from ui.main_window import MainWindow  # noqa: E402
 from ui.workers import attendre_tous  # noqa: E402
@@ -439,6 +440,50 @@ def main():
     verifier(len(RAPPORTS[-1]) == 2 and all(x[1].startswith('Erreur — Import annulé, aucun fichier gardé') for x in RAPPORTS[-1])
              and f.magasin.fichiers(tab_a.sid) == [] and f.magasin.periode(tab_a.sid) is None,
              'lot impossible à écrire : chaque fichier en erreur, rien de gardé')
+
+    print('== Mesures et consignes analogiques (v1.4)')
+    tab_b = f.onglet_de(1)
+    tab_b.sous_onglets.setCurrentWidget(tab_b.vue_globale)
+    global_pret(tab_b)
+    verifier(tab_b.vue_globale.table.isColumnHidden(COLONNES_VG.index('Mesures')), 'colonne « Mesures » masquée sans E/S analogique')
+    projet = json.load(open(os.path.join(EX, 'demo_site_A.json'), encoding='utf-8'))
+    projet['systeme']['system_name'], projet['systeme']['nom_projet'] = 'DEMO_A_ANA', 'Demo Site A analogique'
+    sm1 = next(r for r in projet['radios'] if r['nom'] == 'A-SM1')
+    sm1['peripheriques'].append({'type': 'ENTREE_ANA', 'nom': 'NIVEAU', 'ai': 2, 'mode': 'courant',
+                                 'mesure_bas': 0, 'mesure_haut': 10, 'unite': 'bar'})
+    chemin_ana = os.path.join(TMP, 'demo_site_A_ana.elpro.json')
+    json.dump(projet, open(chemin_ana, 'w', encoding='utf-8'))
+    f.ajouter_systeme(chemin_ana)
+    tab_n = f.onglet_actif()
+    anas = [c for c in f.magasin.catalogue(tab_n.sid)['par_registre'].values() if c['genre'] == 'ANA']
+    verifier(tab_n.nom == 'Demo Site A analogique' and len(anas) == 1 and anas[0]['unite'] == 'bar',
+             'système avec une entrée analogique AI2 (0–10 bar) ajouté')
+    niveau = anas[0]
+    entete = ['COMFLAGS%02d' % k for k in range(1, 21)] + [f"ANA{niveau['registre'] - 35300:02d}", 'ANA_FAIL02', 'AO01',
+                                                           'BATTTV01']
+    lignes = ['TimeStamp: 2026-10-01 00:00:00', 'Unit Serial Number: 99000000003', '', 'Timestamp,' + ','.join(entete) + ',']
+    for i in range(10):
+        lignes.append(f'2026-10-01 00:{i // 2:02d}:{30 * (i % 2):02d},' + ','.join(['0'] * 20)
+                      + f',{16384 + 2048 * i},0,49152,{8192 + int(12.8 * 1024)},')
+    csv_ana = os.path.join(TMP, 'ana.csv')
+    open(csv_ana, 'w', encoding='utf-8').write('\n'.join(lignes) + '\n')
+    f.importer_logs([csv_ana])
+    verifier(RAPPORTS[-1][0][1].startswith('Importé') and not any('ignorées' in x[1] for x in RAPPORTS[-1]),
+             'colonnes ANA, ANA_FAIL, AO, BATTTV reconnues : aucune « colonne ignorée »')
+    tab_n.sous_onglets.setCurrentWidget(tab_n.vue_globale)
+    verifier(global_pret(tab_n) and not tab_n.vue_globale.table.isColumnHidden(COLONNES_VG.index('Mesures'))
+             and tab_n.vue_globale.ligne_tableau('A-SM1')['Mesures'] == '0 – 5,625 bar',
+             f"vue globale : colonne « Mesures » ({(tab_n.vue_globale.ligne_tableau('A-SM1') or {}).get('Mesures')})")
+    tab_n.ouvrir_detail('A-SM1')
+    dt = tab_n.detail
+    titres = [p.titleLabel.text for p in dt.plots]
+    verifier(dt.cases_familles['ANALOGIQUES'].isChecked() and any(c['genre'] == 'ANA' for c in dt.canaux_affiches())
+             and 'Mesures et consignes analogiques (bar)' in titres,
+             f'Détail : famille « Mesures et consignes analogiques », courbe en bar {titres}')
+    aide = dialogs.AideListeLog(f)
+    verifier(aide.table_ana.rowCount() == 3 and 'ANA\t35301\t20' in aide.texte() and 'AO\t45001\t20' in aide.texte()
+             and 'COMFLAGS\t15101\t20' in aide.texte() and 'ELPRO Config 1.5+' in aide.texte(),
+             'aide « Liste de log » : second tableau ANA / ANA_FAIL / AO ; Copier copie les deux')
 
     print('== Récupération depuis la centrale (v1.1)')
     f.close()

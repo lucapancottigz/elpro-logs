@@ -110,7 +110,7 @@ m.exporter_csv(sid, canaux, t0, t1, chemin)
 
 # --- constantes et aides d'affichage
 L.ETATS, L.LIBELLES_ETATS, L.COULEURS_ETATS, L.FAMILLES, L.GENRES
-L.BATTV_BAS, L.RSSI_FAIBLE, L.DISPO_ROUGE, L.DISPO_ORANGE, L.LISTE_STANDARD, L.REGLAGES_STANDARD
+L.BATTV_BAS, L.RSSI_FAIBLE, L.DISPO_ROUGE, L.DISPO_ORANGE, L.LISTE_STANDARD, L.LISTE_ANALOGIQUE (v1.4), L.REGLAGES_STANDARD
 L.heure_locale(t, fmt), L.utc_depuis_locale(a, m, j, h, mi, s), L.duree_texte(s)
 ```
 

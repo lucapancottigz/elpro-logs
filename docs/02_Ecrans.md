@@ -26,7 +26,7 @@ S'il n'y a encore aucun système : page d'accueil avec un grand bouton **« Ajou
 | Système | Liste de log de la centrale (XML)… | Rare : seulement si la centrale n'a pas la liste standard. Choix de l'export XML de la radio → `m.definir_profil(sid, L.lire_profil_xml(chemin))`. Entrée « Revenir à la liste standard » → `m.definir_profil(sid, None)`. Ne s'applique qu'aux imports suivants. |
 | Système | Renommer… | `m.renommer` |
 | Système | Supprimer ce système… | Double confirmation (« Toutes les valeurs importées de ce système seront effacées. ») → `m.supprimer_systeme(sid)` puis `m.compacter_base()`. |
-| Aide | Liste de log à configurer sur la centrale | Fenêtre avec `L.REGLAGES_STANDARD` et le tableau `L.LISTE_STANDARD` (Nom, 1er registre, Nombre), bouton Copier. |
+| Aide | Liste de log à configurer sur la centrale | Fenêtre avec `L.REGLAGES_STANDARD` et le tableau `L.LISTE_STANDARD` (Nom, 1er registre, Nombre), puis un second tableau `L.LISTE_ANALOGIQUE` titré « Si le site a des entrées ou sorties analogiques, ajouter aussi : » et la note « Le nombre = nombre d'entrées (ou de sorties) analogiques du site. Les XML générés par ELPRO Config 1.5+ contiennent déjà la bonne liste. » (v1.4) ; Copier copie les deux tableaux, bouton Copier. |
 | Aide | À propos | Comme ELPRO Config : nom, version, copyright, site, licences tierces. |
 
 ### « Tout récupérer » dans la barre de menus (v1.3.1)
@@ -103,8 +103,9 @@ Une ligne par station, colonnes :
 | Détections | somme des `nb_activations` des canaux `DETECTION` de la station | — |
 | Commandes | somme des `nb_activations` des canaux `COMMANDE` | — |
 | Radar max | canal `RADAR` : `max` + unité | ≥ `seuil_haut` orange |
+| Mesures (v1.4) | pour chaque canal `ANA` de la station : `min – max unité` (ex. `12,1 – 13,8 V`), séparés par « · » ; vide sans données. Colonne affichée seulement si le système a au moins une mesure analogique | — |
 
-Les valeurs batterie, RSSI et radar sont calculées **hors pertes de communication** (pendant une perte, la centrale garde la dernière valeur reçue). Note sous le tableau : « Valeurs mesurées hors pertes de communication. »
+Les valeurs batterie, RSSI, radar et mesures analogiques sont calculées **hors pertes de communication** (pendant une perte, la centrale garde la dernière valeur reçue). Note sous le tableau : « Valeurs mesurées hors pertes de communication. »
 
 Double-clic sur une ligne : comme sur la frise.
 
@@ -114,7 +115,7 @@ Double-clic sur une ligne : comme sur la frise.
 
 ### 4.1 À gauche : sélection
 
-- **Filtres par type** (cases à cocher, une par `L.FAMILLES`) : Communication, Échecs de lecture/envoi, Batteries, RSSI, Secteur (MAINV), Détections, Commandes, Radars, Registres non attribués. Par défaut tout coché sauf « Échecs » et « Registres non attribués ». Ils filtrent l'arbre.
+- **Filtres par type** (cases à cocher, une par `L.FAMILLES`) : Communication, Échecs de lecture/envoi, Batteries, RSSI, Secteur (MAINV), Détections, Commandes, Radars, Mesures et consignes analogiques (v1.4), Registres non attribués. Par défaut tout coché sauf « Échecs » et « Registres non attribués ». Ils filtrent l'arbre.
 - **Arbre** (`QTreeWidget` avec cases) : Station › Famille › Canal (`libelle`, et `nom` en gris). Les canaux de la famille « Registres non attribués » (`catalogue['autres']`) sont sous un nœud « Autres registres » : ce sont les colonnes du log que la configuration n'utilise pas ; elles sont gardées car on veut **toutes** les valeurs.
 - Boutons :
   - **Toute la station** : coche tous les canaux visibles de la station sélectionnée ;

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2026 Geoazimut SàRL (https://geoazimut.com). Tous droits réservés.
 """
-Moteur ELPRO Logs (v1.3) — IMPLÉMENTATION DE RÉFÉRENCE.
+Moteur ELPRO Logs (v1.4) — IMPLÉMENTATION DE RÉFÉRENCE.
 
 Rôle :
   1. lire les fichiers de log (DataLog) des centrales ELPRO 415U-2-C4 ;
@@ -47,6 +47,8 @@ PROFIL_STANDARD = {
     'DET2': 15021, 'CABLE2': 15021, 'DETECTION2': 15021,
     'FEUX': 401, 'CMD_401': 401, 'FEUX2': 421, 'CMD_421': 421, 'FEUX3': 441, 'CMD_441': 441,
     'MAINV': 10501, 'RADAR': 35201,
+    'BATTTV': 30501,                                   # faute de frappe présente sur une centrale en service
+    'ANA': 35301, 'ANA_FAIL': 15801, 'AO': 45001,       # E/S analogiques (ELPRO Config 1.5+)
 }
 # Entrées standard (pour l'aide affichée dans l'app) : nom, premier registre, nombre
 LISTE_STANDARD = [('COMFLAGS', 15101, 20), ('BATTV_FAIL', 15201, 20), ('RSSI_FAIL', 15301, 20),
@@ -54,6 +56,9 @@ LISTE_STANDARD = [('COMFLAGS', 15101, 20), ('BATTV_FAIL', 15201, 20), ('RSSI_FAI
                   ('BATTV', 30501, 20), ('RSSI', 35101, 20), ('DET', 15001, 20), ('FEUX', 401, 20),
                   ('MAINV', 10501, 20), ('CABLE2', 15021, 20), ('RADAR', 35201, 20), ('FEUX2', 421, 20),
                   ('FEUX3', 441, 10), ('RADAR_FAIL', 15701, 20)]
+# Entrées à ajouter seulement si le site a des entrées / sorties analogiques (ELPRO Config 1.5+ les écrit
+# d'elle-même dans le XML de la base) : nombre = nombre d'entrées (ou de sorties) du site, 20 au plus
+LISTE_ANALOGIQUE = [('ANA', 35301, 20), ('ANA_FAIL', 15801, 17), ('AO', 45001, 20)]
 REGLAGES_STANDARD = {'Scan Rate': 30, 'Records per File': 2880}
 
 RE_COLONNE = re.compile(r'^(.*)(\d{2})$')    # CABLE201 -> CABLE2 + 01
@@ -76,22 +81,27 @@ GENRES = {
     'FAIL_SGNL':  ('Échec envoi commandes', '', True),
     'FAIL_MAINV': ('Échec lecture secteur', '', True),
     'FAIL_RADAR': ('Échec lecture radar', '', True),
+    'FAIL_ANA':   ('Échec lecture analogique', '', True),
+    'ANA':        ('Mesure analogique', '', False),       # unité selon l'échelle de l'entrée
+    'CONSIGNE':   ('Consigne sortie analogique', '', False),
     'AUTRE':      ('Registre non attribué', '', False),
 }
 # Familles affichées dans l'interface (filtre « type de donnée »)
 FAMILLES = [
     ('COMM', 'Communication', ('COMFLAG',)),
-    ('ECHECS', 'Échecs de lecture/envoi', ('FAIL_BATTV', 'FAIL_RSSI', 'FAIL_DET', 'FAIL_SGNL', 'FAIL_MAINV', 'FAIL_RADAR')),
+    ('ECHECS', 'Échecs de lecture/envoi', ('FAIL_BATTV', 'FAIL_RSSI', 'FAIL_DET', 'FAIL_SGNL', 'FAIL_MAINV', 'FAIL_RADAR',
+                                           'FAIL_ANA')),
     ('BATTERIE', 'Batteries', ('BATTV',)),
     ('RSSI', 'RSSI', ('RSSI',)),
     ('SECTEUR', 'Secteur (MAINV)', ('MAINV',)),
     ('DETECTIONS', 'Détections', ('DETECTION',)),
     ('COMMANDES', 'Commandes', ('COMMANDE',)),
     ('RADARS', 'Radars', ('RADAR',)),
+    ('ANALOGIQUES', 'Mesures et consignes analogiques', ('ANA', 'CONSIGNE')),
     ('AUTRES', 'Registres non attribués', ('AUTRE',)),
 ]
 FAIL_FAMILLES = (('152', 'FAIL_BATTV'), ('153', 'FAIL_RSSI'), ('154', 'FAIL_DET'),
-                 ('155', 'FAIL_SGNL'), ('156', 'FAIL_MAINV'), ('157', 'FAIL_RADAR'))
+                 ('155', 'FAIL_SGNL'), ('156', 'FAIL_MAINV'), ('157', 'FAIL_RADAR'), ('158', 'FAIL_ANA'))
 
 BATTV_BAS = 11.5        # V, même seuil que le tableau de bord radio
 BATTV_HAUT = 14.5
@@ -156,9 +166,20 @@ def decoder(canal, brut):
         if R and R.get('mesure_20ma') is not None:
             return round(M.ma_vers_unite(ma, R), 1)
         return ma
+    if g in ('ANA', 'CONSIGNE'):
+        return analogique(brut, canal.get('echelle'))
     if GENRES[g][2]:
         return 1 if brut else 0
     return brut
+
+
+def analogique(brut, e):
+    """Valeur brute -> unité de l'échelle {rp1, rp2, dp1, dp2} (conversion linéaire). 0 = jamais lu -> None."""
+    if not brut:
+        return None
+    if not e or e['rp2'] == e['rp1']:
+        return brut
+    return round(e['dp1'] + (brut - e['rp1']) * (e['dp2'] - e['dp1']) / (e['rp2'] - e['rp1']), 3)
 
 
 # --------------------------------------------------------------------------------------------
@@ -405,15 +426,19 @@ def catalogue(projet):
                             radar={'mesure_4ma': R.get('mesure_4ma'), 'mesure_20ma': R.get('mesure_20ma'),
                                    'unite': R.get('unite')},
                             seuil_haut=seuil))
+        for X, g in [(A, 'ANA') for A in S.get('ana', [])] + [(c, 'CONSIGNE') for c in S.get('consignes', [])]:
+            es = f"AI{X['ai']}" if g == 'ANA' else f"AO{X['ao']}"
+            cs.append(canal(S, X['adresse'], g, X['nom'], f"{X['label']} ({es})", unite=X['unite'],
+                            echelle={k: float(X[k]) for k in ('rp1', 'rp2', 'dp1', 'dp2')}))
         # registres d'échec (alimentés par les mappings de la base)
         if S['role'] != 'base':
             presents = {'FAIL_BATTV': True, 'FAIL_RSSI': True, 'FAIL_DET': bool(S['detections']),
-                        'FAIL_SGNL': bool(S['commandes']), 'FAIL_MAINV': bool(S['mainv']),
-                        'FAIL_RADAR': bool(S['radars'])}
+                        'FAIL_SGNL': bool(S['commandes'] or S.get('consignes')), 'FAIL_MAINV': bool(S['mainv']),
+                        'FAIL_RADAR': bool(S['radars']), 'FAIL_ANA': bool(S.get('ana'))}
             for fam, g in FAIL_FAMILLES:
                 if presents[g]:
                     cs.append(canal(S, int(f'{fam}{xx}'), g, f"{S['nom']}_{g[5:]}_FAIL", GENRES[g][0]))
-        elif S['commandes']:
+        elif S['commandes'] or S.get('consignes'):
             cs.append(canal(S, 15501, 'FAIL_SGNL', f"{S['nom']}_SGNL_FAIL", GENRES['FAIL_SGNL'][0]))
         stations.append({'nom': S['nom'], 'role': S['role'], 'xx': xx, 'ip': S['ip'], 'canaux': cs})
     return {'systeme': plan['systeme'], 'version_config': plan.get('version_config'), 'T': plan['T'],

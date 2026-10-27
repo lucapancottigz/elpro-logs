@@ -233,7 +233,7 @@ class Carte(QFrame):
 
 COLONNES = ['Station', 'Rôle', 'Dispo comm', 'Pertes comm', 'Durée pertes', 'Plus longue', 'Batterie min',
             'Batterie moy', 'Batterie max', 'Batterie basse', 'RSSI min', 'RSSI moy', 'Coupures secteur',
-            'Détections', 'Commandes', 'Radar max']
+            'Détections', 'Commandes', 'Radar max', 'Mesures']
 ROLES = {'base': 'Base', 'remote': 'Remote', 'repeater': 'Repeater'}
 
 
@@ -310,6 +310,8 @@ def ligne_station(st):
         cel.append((' · '.join(textes), {'couleur': ORANGE if haut else None, 'gras': haut}))
     else:
         cel.append(('', {}))
+    cel.append((' · '.join(f"{nombre(a['min'])} – {nombre(a['max'])} {a['canal']['unite']}".rstrip()
+                           for a in _canaux(st, 'ANA') if a.get('min') is not None), {}))
     return cel
 
 
@@ -395,6 +397,8 @@ class OverviewView(QWidget):
         self.frise.setMinimumHeight(60 + 22 * len(lignes))
         self.frise.afficher(lignes, t0, t1)
         self.table.setRowCount(0)
+        # colonne « Mesures » seulement si le système a au moins une mesure analogique
+        self.table.setColumnHidden(COLONNES.index('Mesures'), not any(_canaux(s, 'ANA') for s in sy['stations']))
         for st in sy['stations']:
             k = self.table.rowCount()
             self.table.insertRow(k)
