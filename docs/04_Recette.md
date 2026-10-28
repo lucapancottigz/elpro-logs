@@ -5,7 +5,7 @@
 ```
 .\venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
-Attendu : `Ran 44 tests … OK` (31 tests du moteur + 13 de la récupération, v1.3). À lancer dans `build.bat` avant l'empaquetage, comme pour ELPRO Config (arrêt si échec).
+Attendu : `Ran 47 tests … OK` (34 tests du moteur + 13 de la récupération, v1.4). À lancer dans `build.bat` avant l'empaquetage, comme pour ELPRO Config (arrêt si échec).
 
 ## 2. Jeu de démonstration
 
@@ -125,3 +125,17 @@ Sur Windows :
 | E4 | Renommer temporairement le dossier choisi en E2, relancer | Fenêtre « base introuvable » ; Quitter ; remettre le nom ; relancer : tout revient | |
 | E5 | Faire une copie de sauvegarde | Fichier créé ; « Ouvrir une base existante » sur cette copie : mêmes systèmes | |
 | E6 | Déplacer vers un dossier OneDrive ou un lecteur réseau | Avertissement affiché avant de continuer | |
+
+## 6. Mesures et consignes analogiques (v1.4)
+
+Automatique : `tests_ui\ui_acceptance.py` vérifie que la colonne « Mesures » est masquée pour un système sans E/S analogique (chiffres de la vue globale inchangés : G1–G9), puis ajoute `demo_site_A` avec une entrée analogique AI2 sur A-SM1 (échelle 0–10 bar), importe un log avec les colonnes `ANA`, `ANA_FAIL`, `AO` et `BATTTV` (aucune « colonne ignorée »), et contrôle la colonne « Mesures » (`0 – 5,625 bar`), le Détail (famille « Mesures et consignes analogiques » cochée, graphique en bar) et le second tableau de l'aide « Liste de log » (Copier copie les deux).
+
+Sur Windows :
+
+| # | Contrôle | Attendu | OK |
+|---|---|---|---|
+| A1 | Systèmes existants | S'ouvrent comme avant, mêmes chiffres en vue globale | |
+| A2 | Ajouter un système dont le `.elpro.json` a une entrée analogique (ex. `demo_site_A` + entrée analogique AI2 sur A-SM1, échelle 0–10 bar) | Détail : famille « Mesures et consignes analogiques », courbe en bar | |
+| A3 | Importer un log contenant des colonnes `ANA01`, `ANA_FAIL02`, `AO01`, `BATTTV01` | Aucune « colonne ignorée » | |
+| A4 | Vue globale | Colonne « Mesures » présente seulement pour ce système | |
+| A5 | Aide › Liste de log | Second tableau `ANA / ANA_FAIL / AO` ; Copier copie les deux | |

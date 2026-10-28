@@ -2,6 +2,19 @@
 
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation [SemVer](https://semver.org/lang/fr/).
 
+## [1.4.0] — 2026-10-27
+
+### Ajouté
+- Mesures et consignes analogiques (ELPRO Config 1.5+) : les colonnes `ANA` (mesures, registres 353nn), `ANA_FAIL` (échecs de lecture, 158xx) et `AO` (consignes, 450nn) des logs sont reconnues et affichées dans l'unité de l'entrée (échelle de l'entrée). Nouvelle famille « Mesures et consignes analogiques » dans le Détail, le Journal et la synthèse ; un échec de lecture analogique compte comme « Lecture ou envoi en échec » sur la frise.
+- Vue globale : colonne **« Mesures »** (min – max de chaque mesure analogique de la station sur la période), affichée seulement si le système a au moins une mesure analogique.
+- Aide › Liste de log : second tableau des entrées à ajouter si le site a des entrées ou sorties analogiques (`ANA`, `ANA_FAIL`, `AO`) ; Copier copie les deux tableaux.
+
+### Corrigé
+- Colonnes `BATTTV` (faute de frappe présente dans la liste de log d'une centrale en service) reconnues comme tensions batterie : elles étaient ignorées.
+
+### Interne
+- Moteur Logs v1.4 ; copie du moteur d'ELPRO Config v2.3 (noms à 15 caractères, E/S analogiques, étalonnage) ; 47 tests automatiques.
+
 ## [1.3.1] — 2026-10-26
 
 ### Modifié

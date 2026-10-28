@@ -381,5 +381,57 @@ class TestV13(Base):
         self.assertIn('synchronisé', L.avertissement_emplacement('/home/x/OneDrive - Geo/elpro_logs.db'))
         self.assertIsNone(L.avertissement_emplacement(os.path.join(self.tmp, 'elpro_logs.db')))
 
+class TestV14Analogique(unittest.TestCase):
+    """Entrées / sorties analogiques (ELPRO Config 1.5+) et étalonnage (1.6)."""
+
+    def projet(self):
+        p = charger(PROJET_A)
+        R = {r['nom']: r for r in p['radios']}
+        R['A-SM1']['peripheriques'].append({'type': 'ENTREE_ANA', 'nom': 'NIVEAU', 'ai': 2, 'mode': 'courant',
+                                            'mesure_bas': 0, 'mesure_haut': 10, 'unite': 'bar'})
+        R['A-BASE']['peripheriques'].append({'type': 'ENTREE_ANA', 'nom': 'CAM1_BATTV', 'ai': 4, 'mode': 'tension',
+                                             'unite': 'V', 'etalonnage': {'reg_bas': 8192, 'reg_haut': 30720,
+                                                                          'eng_bas': 0, 'eng_haut': 25}})
+        R['A-F1']['peripheriques'].append({'type': 'SORTIE_ANA', 'nom': 'VANNE', 'ao': 1})
+        return p
+
+    def test_catalogue_et_decodage(self):
+        cat = L.catalogue(self.projet())
+        pr = cat['par_registre']
+        batt, niv, ao = pr[35301], pr[35302], pr[45001]
+        self.assertEqual((batt['genre'], batt['famille'], batt['unite'], batt['station']), ('ANA', 'ANALOGIQUES', 'V', 'A-BASE'))
+        self.assertEqual((niv['genre'], niv['unite'], niv['libelle']), ('ANA', 'bar', 'NIVEAU (AI2)'))
+        self.assertEqual((ao['genre'], ao['unite'], ao['libelle']), ('CONSIGNE', 'mA', 'VANNE (AO1)'))
+        self.assertEqual(L.decoder(batt, 8192 + 12 * 901.12), 12.0)
+        self.assertEqual(L.decoder(niv, 32768), 5.0)
+        self.assertEqual(L.decoder(ao, 49152), 20.0)
+        self.assertIsNone(L.decoder(niv, 0))
+        self.assertEqual(pr[15802]['genre'], 'FAIL_ANA')                        # A-SM1 lit une entrée analogique
+        self.assertEqual(pr[15503]['genre'], 'FAIL_SGNL')                       # A-F1 reçoit des commandes / consignes
+        self.assertNotIn(15801, pr)                                              # la base n'a pas de lecture distante
+
+    def test_colonnes(self):
+        regs, avert = L.resoudre_colonnes(['ANA01', 'ANA02', 'ANA_FAIL02', 'AO01', 'BATTTV01', 'BATTV02'])
+        self.assertEqual((regs, avert), ([35301, 35302, 15802, 45001, 30501, 30502], []))
+        self.assertEqual([n for n, _, _ in L.LISTE_ANALOGIQUE], ['ANA', 'ANA_FAIL', 'AO'])
+
+    def test_import_et_courbe(self):
+        d = tempfile.mkdtemp(); self.addCleanup(shutil.rmtree, d, True)
+        m = L.Magasin(os.path.join(d, 'a.db')); self.addCleanup(m.fermer)
+        sid = m.ajouter_config(self.projet())['systeme_id']
+        lignes = ['TimeStamp: 2026-10-01 00:00:00', 'Unit Serial Number: 99000000002', '',
+                  'Timestamp,ANA01,ANA02,AO01,']
+        for i in range(10):
+            lignes.append(f'2026-10-01 00:{i:02d}:00,{8192 + int(12.5 * 901.12)},{16384 + 2048 * i},49152,')
+        r = m.importer_octets(sid, ('\n'.join(lignes) + '\n').encode(), 'data.csv')
+        self.assertEqual(r[0]['statut'], 'importe', r)
+        cat = m.catalogue(sid)
+        t0, t1 = T_DEBUT, T_DEBUT + 600
+        segs = m.segments_decodes(sid, cat['par_registre'][35302], t0, t1)
+        self.assertEqual([round(v, 2) for _, _, v in segs if v is not None][:3], [0.0, 0.62, 1.25])
+        self.assertEqual({round(v, 1) for _, _, v in m.segments_decodes(sid, cat['par_registre'][35301], t0, t1)
+                          if v is not None}, {12.5})
+
+
 if __name__ == '__main__':
     unittest.main()

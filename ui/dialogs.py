@@ -471,8 +471,13 @@ class DateMiseEnService(QDialog):
 
 
 # ============================================================================================ aide
+NOTE_ANALOGIQUE = ('Le nombre = nombre d\'entrées (ou de sorties) analogiques du site. Les XML générés par '
+                   'ELPRO Config 1.5+ contiennent déjà la bonne liste.')
+
+
 class AideListeLog(QDialog):
-    """Liste de log à configurer sur la centrale : réglages et entrées standard GeoAzimut."""
+    """Liste de log à configurer sur la centrale : réglages, entrées standard GeoAzimut et, si le site en a,
+    entrées des E/S analogiques (v1.4)."""
 
     def __init__(self, parent):
         super().__init__(parent)
@@ -494,9 +499,25 @@ class AideListeLog(QDialog):
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         lay.addWidget(self.table)
+        lay.addWidget(QLabel('Si le site a des entrées ou sorties analogiques, ajouter aussi :'))
+        self.table_ana = preparer_tableau(QTableWidget(), ['Nom', '1er registre', 'Nombre'])
+        for nom, reg, n in L.LISTE_ANALOGIQUE:
+            k = self.table_ana.rowCount()
+            self.table_ana.insertRow(k)
+            self.table_ana.setItem(k, 0, cellule(nom))
+            self.table_ana.setItem(k, 1, cellule(reg, droite=True))
+            self.table_ana.setItem(k, 2, cellule(n, droite=True))
+        self.table_ana.horizontalHeader().setStretchLastSection(True)
+        self.table_ana.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.table_ana.setFixedHeight(self.table_ana.horizontalHeader().height() + 22 * len(L.LISTE_ANALOGIQUE) + 4)
+        lay.addWidget(self.table_ana)
+        note = QLabel(NOTE_ANALOGIQUE)
+        note.setWordWrap(True)
+        note.setStyleSheet('color: gray;')
+        lay.addWidget(note)
         b = QHBoxLayout()
         copier = QPushButton('Copier')
-        copier.setToolTip('Copie la liste dans le presse-papiers (colonnes séparées par des tabulations)')
+        copier.setToolTip('Copie les deux listes dans le presse-papiers (colonnes séparées par des tabulations)')
         copier.clicked.connect(self.copier)
         b.addWidget(copier)
         b.addStretch(1)
@@ -510,6 +531,8 @@ class AideListeLog(QDialog):
     def texte():
         lignes = [f'{k}\t{v}' for k, v in L.REGLAGES_STANDARD.items()] + ['', 'Nom\t1er registre\tNombre']
         lignes += [f'{nom}\t{reg}\t{n}' for nom, reg, n in L.LISTE_STANDARD]
+        lignes += ['', 'Si le site a des entrées ou sorties analogiques, ajouter aussi :', 'Nom\t1er registre\tNombre']
+        lignes += [f'{nom}\t{reg}\t{n}' for nom, reg, n in L.LISTE_ANALOGIQUE] + [NOTE_ANALOGIQUE]
         return '\n'.join(lignes) + '\n'
 
     def copier(self):
