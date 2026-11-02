@@ -55,7 +55,7 @@ elpro-logs/
 ├─ engine/
 │  ├─ elpro_logs.py     ← lecture des .log, base SQLite, calculs, journal, export CSV, période par défaut
 │  ├─ elpro_remote.py   ← récupération HTTP sur la centrale, mot de passe chiffré (DPAPI)
-│  └─ elpro_engine.py   ← COPIE du moteur d'ELPRO Config (v2.3) : signification des registres
+│  └─ elpro_engine.py   ← COPIE du moteur d'ELPRO Config (v2.4) : signification des registres
 ├─ tools/make_demo_logs.py  ← génère des .log fictifs au format exact de la radio
 ├─ examples/            ← demo_site_A/B.json (fictifs ; B a un radar en cm) + logs/ (3 jours de B)
 ├─ tests/               ← test_logs.py (36) + test_remote.py (14, avec une fausse centrale HTTP)
@@ -141,7 +141,7 @@ elpro-logs/
 | 1.3.0 | « Tout récupérer » dans la barre d'outils principale ; emplacement des données (déplacer, ouvrir une autre base, copie de sauvegarde, défaut) ; base introuvable au démarrage jamais recréée ; import atomique par fichier |
 | 1.3.1 | « Tout récupérer » : entrée cliquable de la barre de menus entre Système et Aide, barre d'outils retirée ; avertissement Python `\p` corrigé dans `engine/elpro_logs.py` |
 | 1.4.0 | Mesures et consignes analogiques (colonnes `ANA`, `ANA_FAIL`, `AO`), colonne « Mesures » en vue globale, second tableau de l'aide « Liste de log » ; colonnes `BATTTV` reconnues ; copie d'ELPRO Config v2.3 |
-| 1.4.1 | Colonne d'un seul registre sans numéro (ex. `ANA`) reconnue ; Système › Relire tous les logs de la centrale (complète les colonnes jamais lues) |
+| 1.4.1 | Colonne d'un seul registre sans numéro (ex. `ANA`) reconnue ; Système › Relire tous les logs de la centrale (complète les colonnes jamais lues) ; copie d'ELPRO Config v2.4 (entrées en tension AI1/AI2 0-20 V) |
 
 ---
 

@@ -27,7 +27,7 @@ Elle sert à :
 | `04_Recette.md` | Tests automatiques et checklist de validation | — |
 | `engine/elpro_logs.py` | Lecture des `.log`, base de données, calculs, journal, export CSV | **NON** |
 | `engine/elpro_remote.py` | Récupération des logs depuis la centrale (v1.1) | **NON** |
-| `engine/elpro_engine.py` | Copie du moteur d'ELPRO Config v2.3 (signification des registres) | **NON** |
+| `engine/elpro_engine.py` | Copie du moteur d'ELPRO Config v2.4 (signification des registres) | **NON** |
 | `tools/make_demo_logs.py` | Génère des `.log` fictifs au format exact des radios | **NON** |
 | `examples/demo_site_A.json`, `demo_site_B.json` | Projets fictifs. `demo_site_B` contient un radar avec une échelle en cm | **NON** |
 | `examples/logs/*.log` | 3 jours de logs fictifs de `demo_site_B` (comprend une perte de comm, une coupure secteur, une détection, une commande, un passage de seuil radar, une batterie basse) | **NON** |

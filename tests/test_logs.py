@@ -389,9 +389,9 @@ class TestV14Analogique(unittest.TestCase):
         R = {r['nom']: r for r in p['radios']}
         R['A-SM1']['peripheriques'].append({'type': 'ENTREE_ANA', 'nom': 'NIVEAU', 'ai': 2, 'mode': 'courant',
                                             'mesure_bas': 0, 'mesure_haut': 10, 'unite': 'bar'})
-        R['A-BASE']['peripheriques'].append({'type': 'ENTREE_ANA', 'nom': 'CAM1_BATTV', 'ai': 4, 'mode': 'tension',
-                                             'unite': 'V', 'etalonnage': {'reg_bas': 8192, 'reg_haut': 30720,
-                                                                          'eng_bas': 0, 'eng_haut': 25}})
+        # ELPRO Config v2.4 : AI2 en tension = 0-20 V, Span 2048 (8192 = 0 V, 49152 = 20 V)
+        R['A-BASE']['peripheriques'].append({'type': 'ENTREE_ANA', 'nom': 'CAM1_BATTV', 'ai': 2, 'mode': 'tension',
+                                             'unite': 'V'})
         R['A-F1']['peripheriques'].append({'type': 'SORTIE_ANA', 'nom': 'VANNE', 'ao': 1})
         return p
 
@@ -400,9 +400,10 @@ class TestV14Analogique(unittest.TestCase):
         pr = cat['par_registre']
         batt, niv, ao = pr[35301], pr[35302], pr[45001]
         self.assertEqual((batt['genre'], batt['famille'], batt['unite'], batt['station']), ('ANA', 'ANALOGIQUES', 'V', 'A-BASE'))
+        self.assertEqual(batt['libelle'], 'CAM1_BATTV (AI2)')
         self.assertEqual((niv['genre'], niv['unite'], niv['libelle']), ('ANA', 'bar', 'NIVEAU (AI2)'))
         self.assertEqual((ao['genre'], ao['unite'], ao['libelle']), ('CONSIGNE', 'mA', 'VANNE (AO1)'))
-        self.assertEqual(L.decoder(batt, 8192 + 12 * 901.12), 12.0)
+        self.assertEqual(L.decoder(batt, 8192 + 12 * 2048), 12.0)
         self.assertEqual(L.decoder(niv, 32768), 5.0)
         self.assertEqual(L.decoder(ao, 49152), 20.0)
         self.assertIsNone(L.decoder(niv, 0))
@@ -422,7 +423,7 @@ class TestV14Analogique(unittest.TestCase):
         lignes = ['TimeStamp: 2026-10-01 00:00:00', 'Unit Serial Number: 99000000002', '',
                   'Timestamp,ANA01,ANA02,AO01,']
         for i in range(10):
-            lignes.append(f'2026-10-01 00:{i:02d}:00,{8192 + int(12.5 * 901.12)},{16384 + 2048 * i},49152,')
+            lignes.append(f'2026-10-01 00:{i:02d}:00,{8192 + int(12.5 * 2048)},{16384 + 2048 * i},49152,')
         r = m.importer_octets(sid, ('\n'.join(lignes) + '\n').encode(), 'data.csv')
         self.assertEqual(r[0]['statut'], 'importe', r)
         cat = m.catalogue(sid)
@@ -448,7 +449,7 @@ class TestV141ColonneSansNumero(unittest.TestCase):
         lignes = ['TimeStamp: 2026-10-01 00:00:00', 'Unit Serial Number: 99000000004', '',
                   'Timestamp,COMFLAGS02,BATTV01,ANA,']
         for i in range(20):
-            lignes.append(f'2026-10-01 00:{i:02d}:00,0,{8192 + 13 * 1024 + i},{8192 + int((12 + i / 10) * 901.12)},')
+            lignes.append(f'2026-10-01 00:{i:02d}:00,0,{8192 + 13 * 1024 + i},{8192 + int((12 + i / 10) * 2048)},')
         octets = ('\n'.join(lignes) + '\n').encode()
         # 1er import comme la v1.4.0 : la colonne « ANA » n'est pas reconnue
         m.definir_profil(sid, {k: v for k, v in L.PROFIL_STANDARD.items() if k != 'ANA'})

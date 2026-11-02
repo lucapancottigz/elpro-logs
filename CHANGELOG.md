@@ -11,7 +11,7 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Num
 - **Système › Relire tous les logs de la centrale…** (après confirmation) : retélécharge tous les fichiers encore présents sur la centrale (environ 7 jours) et ajoute seulement les colonnes qui n'avaient pas été lues. Les données déjà importées, la période et la liste des fichiers ne changent pas. Rapport : « N fichier(s) relu(s) : x nouveau(x), y complété(s). » et les fichiers complétés. Grisé si la connexion à la centrale n'est pas configurée.
 
 ### Interne
-- Moteur Logs v1.4.1 (`completer=True` à l'import, `relire=True` à la récupération) ; 50 tests automatiques.
+- Moteur Logs v1.4.1 (`completer=True` à l'import, `relire=True` à la récupération) ; copie du moteur d'ELPRO Config v2.4 (entrées en tension AI1/AI2 0-20 V) ; exemples `demo_site_A.json` / `demo_site_B.json` au format 2 ; 50 tests automatiques.
 
 ## [1.4.0] — 2026-10-27
 
