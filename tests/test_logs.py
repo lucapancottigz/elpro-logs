@@ -433,5 +433,47 @@ class TestV14Analogique(unittest.TestCase):
                           if v is not None}, {12.5})
 
 
+
+class TestV141ColonneSansNumero(unittest.TestCase):
+    """Entrée de log d'un seul registre : la radio écrit « ANA » et non « ANA01 » (constaté sur radio)."""
+
+    def test_resolution(self):
+        regs, avert = L.resoudre_colonnes(['BATTV01', 'ANA', 'ANA_FAIL01', 'RADAR', ''])
+        self.assertEqual((regs, avert), ([30501, 35301, 15801, 35201, None], []))
+
+    def test_relire_complete_sans_rien_changer(self):
+        d = tempfile.mkdtemp(); self.addCleanup(shutil.rmtree, d, True)
+        m = L.Magasin(os.path.join(d, 'a.db')); self.addCleanup(m.fermer)
+        sid = m.ajouter_config(TestV14Analogique().projet())['systeme_id']
+        lignes = ['TimeStamp: 2026-10-01 00:00:00', 'Unit Serial Number: 99000000004', '',
+                  'Timestamp,COMFLAGS02,BATTV01,ANA,']
+        for i in range(20):
+            lignes.append(f'2026-10-01 00:{i:02d}:00,0,{8192 + 13 * 1024 + i},{8192 + int((12 + i / 10) * 901.12)},')
+        octets = ('\n'.join(lignes) + '\n').encode()
+        # 1er import comme la v1.4.0 : la colonne « ANA » n'est pas reconnue
+        m.definir_profil(sid, {k: v for k, v in L.PROFIL_STANDARD.items() if k != 'ANA'})
+        r = m.importer_octets(sid, octets, 'x.csv')[0]
+        self.assertEqual(r['statut'], 'importe')
+        m.definir_profil(sid, None)
+        cat = m.catalogue(sid)
+        t0, t1 = T_DEBUT, T_DEBUT + 1200
+        self.assertEqual([v for _, _, v in m.segments(sid, 35301, t0, t1)], [])
+        batt_avant = m.segments(sid, 30501, t0, t1)
+        n_avant = m.nb_points(sid)
+        # même fichier sans « completer » : déjà importé
+        self.assertEqual(m.importer_octets(sid, octets, 'x.csv')[0]['statut'], 'deja_importe')
+        # relecture : seule la colonne manquante est ajoutée
+        r = m.importer_octets(sid, octets, 'x.csv', completer=True)[0]
+        self.assertEqual(r['statut'], 'complete', r)
+        self.assertIn('ANA', r['message'])
+        vals = [v for _, _, v in m.segments_decodes(sid, cat['par_registre'][35301], t0, t1)]
+        self.assertEqual((vals[0], round(vals[-1], 1)), (12.0, 13.9))
+        self.assertEqual(m.segments(sid, 30501, t0, t1), batt_avant)        # rien d'existant n'a bougé
+        self.assertEqual(len(m.fichiers(sid)), 1)
+        self.assertGreater(m.nb_points(sid), n_avant)
+        # 2e relecture : plus rien à compléter
+        r = m.importer_octets(sid, octets, 'x.csv', completer=True)[0]
+        self.assertEqual(r['statut'], 'deja_importe')
+
 if __name__ == '__main__':
     unittest.main()

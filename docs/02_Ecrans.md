@@ -21,6 +21,7 @@ S'il n'y a encore aucun système : page d'accueil avec un grand bouton **« Ajou
 | Fichier | Emplacement des données… | Voir § 9. (v1.3) |
 | Fichier | Quitter | — |
 | Système | Récupérer les logs (`Ctrl+R`) | Voir § 8. (v1.1) |
+| Système | Relire tous les logs de la centrale… | Voir § 8. Grisé si la connexion à la centrale du système actif n'est pas configurée, ou pendant un import ou une récupération. (v1.4.1) |
 | Système | Connexion à la centrale… | Voir § 8. (v1.1) |
 | Système | Mettre à jour la configuration (.elpro.json)… | Boîte : « À partir de quand cette configuration est-elle en service ? » avec un champ date/heure (par défaut : maintenant). → `m.ajouter_config(json, valable_depuis)`. Si le `system_name` du fichier est différent de celui de l'onglet : refuser (« Ce fichier décrit un autre système »). |
 | Système | Liste de log de la centrale (XML)… | Rare : seulement si la centrale n'a pas la liste standard. Choix de l'export XML de la radio → `m.definir_profil(sid, L.lire_profil_xml(chemin))`. Entrée « Revenir à la liste standard » → `m.definir_profil(sid, None)`. Ne s'applique qu'aux imports suivants. |
@@ -179,6 +180,7 @@ Boutons : Importer des logs…, Mettre à jour la configuration…, Liste de log
 | importe | Importé — `message` |
 | deja_importe | Déjà importé |
 | deja_couvert | Déjà présent (mêmes horodatages) |
+| complete | Complété — `message` (relecture de la centrale, v1.4.1), en vert |
 | vide | Fichier vide |
 | erreur | Erreur — `message` |
 | serie_differente (refusé) | Non importé — autre radio |
@@ -229,3 +231,12 @@ Les `avertissements` s'affichent sous la ligne du fichier, en orange.
 | **Revenir à l'emplacement par défaut** | Grisé si la base est déjà à l'emplacement par défaut. Ouvre la base par défaut si elle existe (comme *Ouvrir une base existante*), sinon propose d'y **déplacer** la base actuelle. La clé `base/chemin` est effacée. |
 
 Démarrage avec une base introuvable ou inutilisable : voir `01_Architecture.md`, *Démarrage*.
+
+### Relire tous les logs de la centrale (v1.4.1)
+
+*Système › Relire tous les logs de la centrale…*, sous « Récupérer les logs ». Sert à récupérer des colonnes qu'une version précédente n'avait pas lues (ex. colonne `ANA` sans numéro, ignorée en 1.4.0) sur les fichiers encore présents sur la centrale.
+
+1. Confirmation : « Tous les fichiers encore présents sur la centrale (environ 7 jours) vont être téléchargés à nouveau. Les données déjà importées ne changent pas ; seules les colonnes qui n'avaient pas été lues sont ajoutées. Continuer ? » (**Non** par défaut).
+2. Même déroulement que « Récupérer les logs » (même thread, même progression, Annuler), avec `R.recuperer(m, sid, relire=True)`.
+3. Rapport : le message du moteur (« N fichier(s) relu(s) : x nouveau(x), y complété(s). »), puis les fichiers complétés (« Complété — N colonne(s) ajoutée(s) : … »), nouveaux ou en erreur ; les fichiers sans rien à compléter ne sont pas listés.
+4. Les vues se rechargent à la fin. « Tout récupérer » ne relit jamais.

@@ -127,9 +127,9 @@ class RecupererLogs(QThread):
     avancement = Signal(str, int, int, str)      # système, n, total, nom du fichier
     resultat = Signal(object)                    # rapport (un système) ou [(systeme, rapport)] (tous)
 
-    def __init__(self, chemin_base, sid=None, forcer=False, parent=None):
+    def __init__(self, chemin_base, sid=None, forcer=False, parent=None, relire=False):
         super().__init__(parent)
-        self.chemin_base, self.sid, self.forcer = chemin_base, sid, forcer
+        self.chemin_base, self.sid, self.forcer, self.relire = chemin_base, sid, forcer, relire
         self.annule = False
         self.rapport = None
         _garder(self)
@@ -148,7 +148,7 @@ class RecupererLogs(QThread):
                     annuler=lambda: self.annule)
             else:
                 self.rapport = R.recuperer(
-                    m, self.sid, forcer=self.forcer,
+                    m, self.sid, forcer=self.forcer, relire=self.relire,
                     progression=lambda n, t, nom: self.avancement.emit('', n, t, nom),
                     annuler=lambda: self.annule)
         except Exception as e:           # erreur inattendue : rapportée comme les erreurs de la centrale

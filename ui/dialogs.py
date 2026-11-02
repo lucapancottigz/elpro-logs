@@ -24,14 +24,15 @@ RESULTATS = {
     'vide': 'Fichier vide',
     'erreur': 'Erreur',
     'serie_differente': 'Non importé — autre radio',
+    'complete': 'Complété',                     # relecture de la centrale (v1.4.1) : colonnes ajoutées
 }
 
 
 def texte_resultat(r):
     """Rapport d'import -> (résultat, détail)."""
     st = r.get('statut')
-    if st == 'importe':
-        return f"Importé — {r.get('message', '')}", ''
+    if st in ('importe', 'complete'):
+        return f"{RESULTATS[st]} — {r.get('message', '')}", ''
     if st == 'erreur':
         return f"Erreur — {r.get('message', '')}", ''
     if st == 'serie_differente':
@@ -143,7 +144,7 @@ class RapportImport(QDialog):
             res, det = texte_resultat(r)
             k = self.table.rowCount()
             self.table.insertRow(k)
-            couleur = '#2E7D32' if r.get('statut') == 'importe' else ('#C62828' if r.get('statut') in
+            couleur = '#2E7D32' if r.get('statut') in ('importe', 'complete') else ('#C62828' if r.get('statut') in
                                                                         ('erreur', 'serie_differente') else None)
             self.table.setItem(k, 0, cellule(r.get('fichier', '')))
             self.table.setItem(k, 1, cellule(res, couleur=couleur))
@@ -335,9 +336,10 @@ class ProgressionRecuperation(QDialog):
     """Progression d'une récupération : « Fichier n / total : nom » (ou « <système> — fichier n / total »),
     bouton Annuler (arrêt après le fichier en cours). `rapport` à la fermeture."""
 
-    def __init__(self, parent, chemin_base, sid=None, forcer=False):
+    def __init__(self, parent, chemin_base, sid=None, forcer=False, relire=False):
         super().__init__(parent)
-        self.setWindowTitle('Récupération des logs' if sid is not None else 'Tout récupérer')
+        self.setWindowTitle('Relecture des logs' if relire else 'Récupération des logs' if sid is not None
+                            else 'Tout récupérer')
         self.setMinimumWidth(480)
         self.setWindowFlag(Qt.WindowCloseButtonHint, False)
         lay = QVBoxLayout(self)
@@ -353,7 +355,7 @@ class ProgressionRecuperation(QDialog):
         self.bouton_annuler.clicked.connect(self.annuler)
         b.addWidget(self.bouton_annuler)
         lay.addLayout(b)
-        self.thread = RecupererLogs(chemin_base, sid, forcer)
+        self.thread = RecupererLogs(chemin_base, sid, forcer, relire=relire)
         self.thread.avancement.connect(self._avance)
         self.thread.finished.connect(self.accept)
 

@@ -80,9 +80,11 @@ m.definir_profil(sid, L.lire_profil_xml(chemin_xml))   # liste de log non standa
 m.profil(sid)
 
 # --- import
-m.importer_fichier(sid, chemin, forcer_serie=False, progression=callback(n, total))
+m.importer_fichier(sid, chemin, forcer_serie=False, progression=callback(n, total), completer=False)
     # -> [rapport] ; rapport : fichier, statut, message, avertissements, (t_debut, t_fin)
     # statut : importe | deja_importe | deja_couvert | vide | erreur | serie_differente
+    # completer=True (v1.4.1) : un fichier déjà importé ajoute seulement les registres sans aucun point sur sa
+    # période (statut complete, « N colonne(s) ajoutée(s) : … ») ; rien à ajouter : deja_importe
 with m.lot():                    # imports groupés (v1.2) : chaque bloc réécrit une fois, une seule transaction
     for chemin in chemins: m.importer_fichier(sid, chemin)    # chaque fichier en tout ou rien (v1.3)
 
@@ -144,7 +146,8 @@ Module `engine/elpro_remote.py` (fourni, NE PAS MODIFIER) : connexion HTTP à la
 import elpro_remote as R
 m.definir_acces(sid, adresse, utilisateur, R.proteger_mdp(mdp)); m.acces(sid)
 R.Session(adresse, utilisateur, mdp).identifier()       # {'nom', 'serie'} ; lève R.ErreurCentrale
-R.recuperer(m, sid, forcer=False, progression=f(n, total, nom), annuler=f() -> bool)
+R.recuperer(m, sid, forcer=False, progression=f(n, total, nom), annuler=f() -> bool, relire=False)
+    # relire=True (v1.4.1) : retélécharge TOUS les fichiers encore sur la centrale, importés avec completer=True
 R.recuperer_tout(m, progression=f(systeme, n, total, nom), annuler=f() -> bool)
 R.rappel_necessaire(m, sid)                             # texte si les dernières données ont > 5 jours
 ```

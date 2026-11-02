@@ -31,7 +31,7 @@ Elle sert à :
 | `tools/make_demo_logs.py` | Génère des `.log` fictifs au format exact des radios | **NON** |
 | `examples/demo_site_A.json`, `demo_site_B.json` | Projets fictifs. `demo_site_B` contient un radar avec une échelle en cm | **NON** |
 | `examples/logs/*.log` | 3 jours de logs fictifs de `demo_site_B` (comprend une perte de comm, une coupure secteur, une détection, une commande, un passage de seuil radar, une batterie basse) | **NON** |
-| `tests/test_logs.py`, `tests/test_remote.py` | Tests automatiques du moteur (34 tests) et de la récupération (13 tests), v1.4 | **NON** |
+| `tests/test_logs.py`, `tests/test_remote.py` | Tests automatiques du moteur (36 tests) et de la récupération (14 tests), v1.4.1 | **NON** |
 | `_reference_elpro_config/` | Copie des fichiers d'ELPRO Config (infrastructure à reprendre, voir `01_Architecture.md`) | À supprimer dans la PR |
 
 ## Règles de travail

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2026 Geoazimut SàRL (https://geoazimut.com). Tous droits réservés.
 """
-Moteur ELPRO Logs (v1.4) — IMPLÉMENTATION DE RÉFÉRENCE.
+Moteur ELPRO Logs (v1.4.1) — IMPLÉMENTATION DE RÉFÉRENCE.
 
 Rôle :
   1. lire les fichiers de log (DataLog) des centrales ELPRO 415U-2-C4 ;
@@ -352,7 +352,17 @@ def resoudre_colonnes(colonnes, profil=None):
         p[k.upper()] = v[0] if isinstance(v, (tuple, list)) else v
     regs, inconnus, comptes = [], set(), {}
     for c in colonnes:
+        if c.strip().upper() in p and not (RE_COLONNE.match(c) and RE_COLONNE.match(c).group(1).upper() in p):
+            # v1.4.1 : une entrée de log d'un seul registre (nombre = 1) donne une colonne SANS numéro
+            # (constaté sur radio : « ANA » et non « ANA01 »)
+            pref = c.strip().upper()
+            comptes[pref] = comptes.get(pref, 0) + 1
+            regs.append(p[pref])
+            continue
         m = RE_COLONNE.match(c)
+        if not c.strip():
+            regs.append(None)                     # colonne vide laissée par la virgule de fin de ligne
+            continue
         if not m or m.group(1).upper() not in p:
             regs.append(None)
             inconnus.add(m.group(1) if m else c)
@@ -882,7 +892,7 @@ class Magasin:
         """Noms des fichiers déjà importés (pour ne télécharger que les nouveaux)."""
         return {n for (n,) in self.cx.execute('SELECT nom FROM fichiers WHERE systeme_id=?', (sid,))}
 
-    def importer_octets(self, sid, octets, nom, forcer_serie=False, progression=None):
+    def importer_octets(self, sid, octets, nom, forcer_serie=False, progression=None, completer=False):
         """Comme importer_fichier, à partir du contenu d'un fichier (téléchargé)."""
         try:
             logs = [analyser_csv(txt, n) for n, txt in _csv_depuis_octets(octets, nom)]
@@ -890,24 +900,28 @@ class Magasin:
             return [{'fichier': nom, 'statut': 'erreur', 'message': str(e)}]
         for lg in logs:
             lg['nom'] = nom
-        return [self.importer_log(sid, lg, forcer_serie, progression) for lg in logs]
+        return [self.importer_log(sid, lg, forcer_serie, progression, completer) for lg in logs]
 
-    def importer_fichier(self, sid, chemin, forcer_serie=False, progression=None):
-        """Importe un fichier .log/.zip/.csv. Renvoie une liste de rapports (un par log contenu)."""
+    def importer_fichier(self, sid, chemin, forcer_serie=False, progression=None, completer=False):
+        """Importe un fichier .log/.zip/.csv. Renvoie une liste de rapports (un par log contenu).
+        completer=True (v1.4.1) : un fichier déjà importé complète les colonnes qui n'avaient pas été lues."""
         try:
             logs = lire_fichier_log(chemin)
         except ErreurLog as e:
             return [{'fichier': os.path.basename(chemin), 'statut': 'erreur', 'message': str(e)}]
-        return [self.importer_log(sid, lg, forcer_serie, progression) for lg in logs]
+        return [self.importer_log(sid, lg, forcer_serie, progression, completer) for lg in logs]
 
-    def importer_log(self, sid, lg, forcer_serie=False, progression=None):
+    def importer_log(self, sid, lg, forcer_serie=False, progression=None, completer=False):
         """lg : résultat de analyser_csv. Statuts : importe | deja_importe | deja_couvert | vide |
-        serie_differente (rien importé : redemander avec forcer_serie=True après confirmation)."""
+        serie_differente (rien importé : redemander avec forcer_serie=True après confirmation) |
+        complete (v1.4.1, completer=True sur un fichier déjà importé : colonnes ajoutées)."""
         rap = {'fichier': lg['nom'], 'serie': lg['serie'], 'avertissements': []}
         if not lg['lignes']:
             return dict(rap, statut='vide', message='Aucune ligne de données.')
         if self.cx.execute('SELECT 1 FROM fichiers WHERE systeme_id=? AND empreinte=?',
                            (sid, lg['empreinte'])).fetchone():
+            if completer:
+                return self._completer_log(sid, lg, rap)
             return dict(rap, statut='deja_importe', message='Fichier déjà importé.')
         serie_sys = self.cx.execute('SELECT serie FROM systemes WHERE id=?', (sid,)).fetchone()[0]
         if lg['serie'] and serie_sys and lg['serie'] != serie_sys and not forcer_serie:
@@ -981,6 +995,51 @@ class Magasin:
             rap['avertissements'].append(f'{len(ts) - len(gardees)} lignes déjà présentes ont été ignorées.')
         return dict(rap, statut='importe', message=f'{len(gardees)} lignes importées.',
                     t_debut=gardees[0][0], t_fin=gardees[-1][0] + pas, nb_points=len(lots))
+
+    def _a_des_points(self, sid, r, t0, t1):
+        """True si le registre r a au moins un point dans [t0, t1] (base ou lot en cours)."""
+        for m in range(mois_de(t0), mois_de(t1) + 1):
+            if any(t0 <= t <= t1 for t, _ in self._bloc(sid, r, m)):
+                return True
+            if self._lot is not None and any(t0 <= t <= t1 for t, _ in self._lot.get((sid, r, m), [])):
+                return True
+        return False
+
+    def _completer_log(self, sid, lg, rap):
+        """v1.4.1 — Fichier déjà importé : ajoute seulement les colonnes qui n'avaient pas été lues
+        (registre sans aucun point sur la période du fichier, p. ex. colonne ignorée par une version
+        précédente). Les registres déjà présents ne sont jamais modifiés ; la couverture ne change pas."""
+        regs, avert = resoudre_colonnes(lg['colonnes'], self.profil(sid))
+        ts = [t for t, _ in lg['lignes']]
+        diffs = sorted(b - a for a, b in zip(ts, ts[1:]) if b > a)
+        pas = diffs[len(diffs) // 2] if diffs else 30
+        t0, t1 = ts[0], ts[-1]
+        cols = [(k, r) for k, r in enumerate(regs) if r is not None and not self._a_des_points(sid, r, t0, t1)]
+        if not cols:
+            return dict(rap, statut='deja_importe', message='Fichier déjà importé (rien à compléter).')
+        lots, dern, prec = [], {}, None
+        for t, v in lg['lignes']:
+            debut = prec is None or t - prec > 1.5 * pas
+            for k, r in cols:
+                if debut or dern.get(r, 'rien') != v[k]:
+                    lots.append((r, t, v[k]))
+                    dern[r] = v[k]
+            prec = t
+        cur = self.cx.cursor()
+        cur.execute('SAVEPOINT completer_fichier')
+        try:
+            self._ecrire_points(cur, sid, lots)
+        except BaseException:
+            cur.execute('ROLLBACK TO completer_fichier')
+            cur.execute('RELEASE completer_fichier')
+            raise
+        cur.execute('RELEASE completer_fichier')
+        self._valider()
+        self._cache_cat.clear()
+        self._cache_blocs.clear()
+        noms = ', '.join(lg['colonnes'][k] for k, _ in cols)
+        return dict(rap, statut='complete', message=f'{len(cols)} colonne(s) ajoutée(s) : {noms}.',
+                    t_debut=t0, t_fin=t1 + pas, nb_points=len(lots), avertissements=avert)
 
     # ---------------------------------------------------------------- import groupé (v1.2)
     @contextlib.contextmanager
