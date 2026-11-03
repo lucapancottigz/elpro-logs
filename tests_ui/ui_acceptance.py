@@ -21,7 +21,7 @@ import elpro_logs as L  # noqa: E402
 import make_demo_logs as G  # noqa: E402
 import pyqtgraph as pg  # noqa: E402
 from ui import dialogs  # noqa: E402
-from ui.overview_view import COLONNES as COLONNES_VG  # noqa: E402
+from ui.overview_view import COLONNES as COLONNES_VG, chiffres_cles as MW_chiffres  # noqa: E402
 from ui import main_window as MW  # noqa: E402
 from ui.main_window import MainWindow  # noqa: E402
 from ui.workers import attendre_tous  # noqa: E402
@@ -143,6 +143,12 @@ def main():
     tab = f.onglet_actif()
     verifier('Aucun log importé' in tab.bandeau.text() and tab.bouton_importer.isVisible(),
              'bandeau « Aucun log importé » + bouton Importer')
+    verifier(not f.action_relire.isEnabled() and f.actions_systeme[0].isEnabled(),
+             'Système › Relire tous les logs de la centrale grisé sans connexion configurée (v1.4.1)')
+    ms = f.menuBar().actions()[1].menu()
+    textes_ms = [a.text() for a in ms.actions()]
+    verifier(textes_ms[:2] == ['Récupérer les logs', 'Relire tous les logs de la centrale…'],
+             'Relire tous les logs : sous « Récupérer les logs » dans le menu Système')
     MESSAGES.clear()
     f.ajouter_systeme(os.path.join(EX, 'demo_site_B.json'))
     verifier(f.onglets.count() == 1 and any('déjà dans l\'application' in m[2] for m in MESSAGES),
@@ -474,8 +480,25 @@ def main():
     verifier(global_pret(tab_n) and not tab_n.vue_globale.table.isColumnHidden(COLONNES_VG.index('Mesures'))
              and tab_n.vue_globale.ligne_tableau('A-SM1')['Mesures'] == '0 – 5,625 bar',
              f"vue globale : colonne « Mesures » ({(tab_n.vue_globale.ligne_tableau('A-SM1') or {}).get('Mesures')})")
+    # v1.4.1 : entrée d'un seul registre -> colonne SANS numéro (« ANA » et non « ANA01 »)
+    lignes = ['TimeStamp: 2026-10-01 00:10:00', 'Unit Serial Number: 99000000003', '',
+              'Timestamp,' + ','.join(entete[:20]) + ',ANA,']
+    for i in range(10, 20):
+        lignes.append(f'2026-10-01 00:{i // 2:02d}:{30 * (i % 2):02d},' + ','.join(['0'] * 20) + f',{16384 + 2048 * 12},')
+    csv_ana2 = os.path.join(TMP, 'ana_sans_numero.csv')
+    open(csv_ana2, 'w', encoding='utf-8').write('\n'.join(lignes) + '\n')
+    f.importer_logs([csv_ana2])
+    verifier(niveau['registre'] == 35301 and RAPPORTS[-1][0][1].startswith('Importé')
+             and not any('ignorées' in x[1] for x in RAPPORTS[-1]), 'log avec une colonne « ANA » sans numéro : aucune colonne ignorée')
+    tab_n.periode_tout()
+    tab_n.sous_onglets.setCurrentWidget(tab_n.vue_globale)
+    verifier(global_pret(tab_n) and tab_n.vue_globale.ligne_tableau('A-SM1')['Mesures'] == '0 – 7,5 bar',
+             f"colonne « Mesures » avec la colonne « ANA » ({(tab_n.vue_globale.ligne_tableau('A-SM1') or {}).get('Mesures')})")
     tab_n.ouvrir_detail('A-SM1')
     dt = tab_n.detail
+    dt.tracer()
+    v_ana = {c['genre']: v for c, v in dt.valeurs_au(L.utc_depuis_texte('2026-10-01 00:07:00'))}.get('ANA')
+    verifier(v_ana == 7.5, f'Détail : mesure de la colonne « ANA » affichée ({v_ana} bar)')
     titres = [p.titleLabel.text for p in dt.plots]
     verifier(dt.cases_familles['ANALOGIQUES'].isChecked() and any(c['genre'] == 'ANA' for c in dt.canaux_affiches())
              and 'Mesures et consignes analogiques (bar)' in titres,
@@ -572,6 +595,40 @@ def main():
                                                  ('Demo Site A', 'Centrale injoignable', '0')],
              f'W6b Tout récupérer : une ligne par système {lt}')
     verifier(f.onglet_de(tab.sid).bandeau.text().endswith('5 fichiers'), 'W6b onglets à jour après Tout récupérer')
+
+    print('== Relire tous les logs de la centrale (v1.4.1)')
+    f.onglets.setCurrentWidget(f.onglet_de(tab.sid))
+    tab = f.onglet_actif()
+    verifier(f.action_relire.isEnabled(), 'Relire tous les logs : actif quand la connexion est configurée')
+    # log au format radio avec une colonne d'un seul registre, nommée SANS numéro (« ANA »)
+    _nom, texte = L._csv_depuis_octets(contenus[noms[0]], noms[0])[0]
+    lignes = texte.splitlines()
+    k0 = next(i for i, l in enumerate(lignes) if l.startswith('Timestamp,'))
+    lignes = lignes[:k0] + [lignes[k0].rstrip(',') + ',ANA,'] + [l.rstrip(',') + ',12000,' if l.strip() else l
+                                                                for l in lignes[k0 + 1:]]
+    nom_ana = '20261001235959-B-BASE-DAT.log'
+    fc.fichiers[nom_ana] = ('\n'.join(lignes) + '\n').encode('utf-8')
+    ana = L.PROFIL_STANDARD.pop('ANA')       # comme une version précédente : la colonne « ANA » n'est pas lue
+    f.recuperer_logs(tab)
+    L.PROFIL_STANDARD['ANA'] = ana
+    t0, t1 = f.magasin.periode(tab.sid)
+    verifier(len(f.magasin.fichiers(tab.sid)) == 6 and not f.magasin.segments(tab.sid, 35301, t0, t1),
+             'fichier récupéré sans sa colonne « ANA » (version précédente)')
+    MESSAGES.clear()
+    n_prog = len(PROGRESSION)
+    REPONSES['question'] = QMessageBox.No
+    f.relire_logs(tab)
+    REPONSES['question'] = QMessageBox.Yes
+    verifier(MESSAGES and MESSAGES[-1][0] == 'question' and MESSAGES[-1][2].startswith('Tous les fichiers encore présents')
+             and len(PROGRESSION) == n_prog, 'Relire : confirmation ; Non → rien')
+    avant = MW_chiffres(f.magasin.synthese(tab.sid, t0, t1))
+    f.relire_logs(tab)
+    verifier(RESUMES[-1] == '6 fichier(s) relu(s) : 0 nouveau(x), 1 complété(s).' and len(PROGRESSION) > n_prog
+             and [x[:2] for x in RAPPORTS[-1]] == [(nom_ana, 'Complété — 1 colonne(s) ajoutée(s) : ANA.')],
+             f'Relire : progression, rapport « {RESUMES[-1]} » et le fichier complété')
+    verifier(len(f.magasin.fichiers(tab.sid)) == 6 and f.magasin.segments(tab.sid, 35301, t0, t1)
+             and MW_chiffres(f.magasin.synthese(tab.sid, t0, t1)) == avant and f.magasin.periode(tab.sid) == (t0, t1),
+             'après la relecture : mêmes fichiers, même période, mêmes chiffres ; la colonne « ANA » est ajoutée')
     fc.arreter()
     f.close()
     f = fenetre('c.db')

@@ -17,7 +17,7 @@ Vues : frise d'état global, synthèse par station, détail par station, type de
 | Élément | Valeur |
 |---|---|
 | Dépôt | `lucapancottigz/elpro-logs` (**public**) |
-| Dernière version | **1.4.0** (moteur `elpro_logs` v1.4 + `elpro_remote` v1.2) |
+| Dernière version | **1.4.1** (moteur `elpro_logs` v1.4.1 + `elpro_remote` v1.4.1) |
 | Langage / interface | Python 3.11+ / PySide6 / **pyqtgraph** (pas QtCharts, pour une question de licence) / tzdata |
 | Distribution | Installateur Inno Setup (`AppId` propre, différent de celui d'ELPRO Config) dans les Releases GitHub |
 | Licence | Propriétaire : « © 2026 Geoazimut SàRL. Tous droits réservés. », geoazimut.com |
@@ -40,7 +40,7 @@ Vues : frise d'état global, synthèse par station, détail par station, type de
 2. **Aucune règle métier dans l'interface** : pas de conversion de tension, de seuil, d'état ou de durée. Libellés, unités, couleurs d'état et seuils viennent de `elpro_logs`.
 3. **Aucune donnée réelle dans le dépôt**, qui est public : pas de `.elpro.json` ou de `.log` de site, pas de base `.db`, pas de nom de site, d'adresse WireGuard ni de n° de série réel. `.gitignore` contient `*.db`, `*.db-wal` et `*.db-shm`.
 4. Noms de fichiers de code en anglais ; commentaires, documentation et interface en français.
-5. Avant toute livraison : **`Ran 47 tests … OK`** (`tests/`), plus la recette de l'interface (`tests_ui/`) : `Recette interface : OK`. `build.bat` vérifie aussi l'exécutable (`app.py --verifier`).
+5. Avant toute livraison : **`Ran 52 tests … OK`** (`tests/`), plus la recette de l'interface (`tests_ui/`) : `Recette interface : OK`. `build.bat` vérifie aussi l'exécutable (`app.py --verifier`).
 6. Ne change pas l'`AppId` ni `AppPublisher` de l'installateur. AppUserModelID : `GeoAzimut.ELPROLogs`.
 
 ---
@@ -55,10 +55,10 @@ elpro-logs/
 ├─ engine/
 │  ├─ elpro_logs.py     ← lecture des .log, base SQLite, calculs, journal, export CSV, période par défaut
 │  ├─ elpro_remote.py   ← récupération HTTP sur la centrale, mot de passe chiffré (DPAPI)
-│  └─ elpro_engine.py   ← COPIE du moteur d'ELPRO Config (v2.3) : signification des registres
+│  └─ elpro_engine.py   ← COPIE du moteur d'ELPRO Config (v2.4) : signification des registres
 ├─ tools/make_demo_logs.py  ← génère des .log fictifs au format exact de la radio
 ├─ examples/            ← demo_site_A/B.json (fictifs ; B a un radar en cm) + logs/ (3 jours de B)
-├─ tests/               ← test_logs.py (34) + test_remote.py (13, avec une fausse centrale HTTP)
+├─ tests/               ← test_logs.py (38) + test_remote.py (14, avec une fausse centrale HTTP)
 ├─ tests_ui/            ← recette automatique de l'interface
 ├─ installer/           ← elpro_logs.iss + génération de la ressource de version
 └─ docs/                ← 00_LISEZMOI, 01_Architecture, 02_Ecrans, 03_Stockage, 04_Recette
@@ -75,7 +75,7 @@ elpro-logs/
 ## 5. Le format des logs (constaté sur radio, firmware 2.59)
 
 - **Fichier `.log` :** gzip, puis tar, contenant `data.csv` et `logfile.chk`. `data.csv` commence par `TimeStamp: …`, `Unit Serial Number: …` et une ligne vide, puis l'en-tête `Timestamp,<NOM><nn>,…,` et une ligne par enregistrement. Les **horodatages sont en UTC**.
-- **Colonnes :** la colonne `<NOM><nn>` correspond au registre (premier registre de l'entrée NOM) + nn − 1. La correspondance entre noms d'entrée et premiers registres est dans `PROFIL_STANDARD`, alias compris. Un nom inconnu est ignoré avec un avertissement. Une seule colonne MAINV signale une ancienne liste : elle est ignorée avec un avertissement.
+- **Colonnes :** la colonne `<NOM><nn>` correspond au registre (premier registre de l'entrée NOM) + nn − 1. La correspondance entre noms d'entrée et premiers registres est dans `PROFIL_STANDARD`, alias compris. Une entrée d'**un seul registre** (nombre = 1) donne une colonne **sans numéro** (ex. `ANA`) : premier registre de l'entrée (v1.4.1). Un nom inconnu est ignoré avec un avertissement. Une seule colonne MAINV signale une ancienne liste : elle est ignorée avec un avertissement.
 - **Liste de log standard à configurer sur chaque centrale :**
   - `L.LISTE_STANDARD`, soit 16 entrées et 310 colonnes, consultable dans Aide › Liste de log ;
   - si le site a des entrées ou sorties analogiques (ELPRO Config 1.5+), en plus `L.LISTE_ANALOGIQUE` : `ANA` 35301, `ANA_FAIL` 15801, `AO` 45001, nombre = nombre d'entrées (ou de sorties) du site (v1.4) ;
@@ -104,7 +104,7 @@ elpro-logs/
 - **API :**
 
   ```python
-  R.recuperer(m, sid, forcer=False, progression, annuler)
+  R.recuperer(m, sid, forcer=False, progression, annuler, relire=False)   # relire : v1.4.1
   R.recuperer_tout(m, ...)
   R.rappel_necessaire(m, sid)
   ```
@@ -141,6 +141,7 @@ elpro-logs/
 | 1.3.0 | « Tout récupérer » dans la barre d'outils principale ; emplacement des données (déplacer, ouvrir une autre base, copie de sauvegarde, défaut) ; base introuvable au démarrage jamais recréée ; import atomique par fichier |
 | 1.3.1 | « Tout récupérer » : entrée cliquable de la barre de menus entre Système et Aide, barre d'outils retirée ; avertissement Python `\p` corrigé dans `engine/elpro_logs.py` |
 | 1.4.0 | Mesures et consignes analogiques (colonnes `ANA`, `ANA_FAIL`, `AO`), colonne « Mesures » en vue globale, second tableau de l'aide « Liste de log » ; colonnes `BATTTV` reconnues ; copie d'ELPRO Config v2.3 |
+| 1.4.1 | Colonne d'un seul registre sans numéro (ex. `ANA`) reconnue ; Système › Relire tous les logs de la centrale (complète les colonnes jamais lues) ; copie d'ELPRO Config v2.4 (entrées en tension AI1/AI2 0-20 V) ; configs au format 1 gardées avec l'échelle programmée dans la radio |
 
 ---
 
@@ -155,7 +156,7 @@ elpro-logs/
 ## 10. Pour démarrer
 
 1. Clone le dépôt et lis `docs/00` à `docs/04`, le `CHANGELOG.md` et ce document.
-2. Crée le venv et lance les tests : `Ran 47 tests … OK`, puis la recette de l'interface : `Recette interface : OK`.
+2. Crée le venv et lance les tests : `Ran 52 tests … OK`, puis la recette de l'interface : `Recette interface : OK`.
 3. Lance l'application :
    - ajoute `examples/demo_site_B.json` ;
    - importe `examples/logs/*.log` ;

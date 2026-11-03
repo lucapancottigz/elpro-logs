@@ -5,7 +5,7 @@
 ```
 .\venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
-Attendu : `Ran 47 tests … OK` (34 tests du moteur + 13 de la récupération, v1.4). À lancer dans `build.bat` avant l'empaquetage, comme pour ELPRO Config (arrêt si échec).
+Attendu : `Ran 52 tests … OK` (38 tests du moteur + 14 de la récupération, v1.4.1). À lancer dans `build.bat` avant l'empaquetage, comme pour ELPRO Config (arrêt si échec).
 
 ## 2. Jeu de démonstration
 
@@ -139,3 +139,16 @@ Sur Windows :
 | A3 | Importer un log contenant des colonnes `ANA01`, `ANA_FAIL02`, `AO01`, `BATTTV01` | Aucune « colonne ignorée » | |
 | A4 | Vue globale | Colonne « Mesures » présente seulement pour ce système | |
 | A5 | Aide › Liste de log | Second tableau `ANA / ANA_FAIL / AO` ; Copier copie les deux | |
+
+## 7. Colonne sans numéro et relecture de la centrale (v1.4.1)
+
+Automatique : `tests_ui\ui_acceptance.py` importe un log avec une colonne `ANA` sans numéro (aucune « colonne ignorée », mesure affichée dans la vue globale et le Détail) ; vérifie que *Système › Relire tous les logs de la centrale…* est sous « Récupérer les logs » et grisé sans connexion ; puis, avec la fausse centrale, récupère un fichier dont la colonne `ANA` n'est pas lue (comme en 1.4.0), demande la relecture (Non → rien ; Oui → progression, rapport « 6 fichier(s) relu(s) : 0 nouveau(x), 1 complété(s). » et le fichier complété) et contrôle que fichiers, période et chiffres sont inchangés, avec la colonne ajoutée.
+
+Sur Windows, avec la vraie centrale du site concerné (tunnel WireGuard activé) :
+
+| # | Contrôle | Attendu | OK |
+|---|---|---|---|
+| L1 | Importer un log contenant une colonne `ANA` (sans numéro) | Aucune « colonne ignorée » ; la mesure s'affiche dans le Détail | |
+| L2 | Système › Relire tous les logs de la centrale… | Confirmation ; Non → rien ; Oui → progression, rapport « N fichier(s) relu(s) … » | |
+| L3 | Après la relecture | Nombre de fichiers et chiffres de la vue globale inchangés, sauf les nouvelles mesures | |
+| L4 | Système sans connexion configurée | Menu « Relire tous les logs de la centrale… » grisé | |

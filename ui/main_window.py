@@ -178,6 +178,9 @@ class MainWindow(QMainWindow):
         ms = self.menuBar().addMenu('&Système')
         self.actions_systeme = [
             action(ms, 'Récupérer les logs', lambda: self.recuperer_logs(), QKeySequence('Ctrl+R')),
+        ]
+        self.action_relire = action(ms, 'Relire tous les logs de la centrale…', self.relire_logs)
+        self.actions_systeme += [
             action(ms, 'Connexion à la centrale…', lambda: self.connexion_centrale()),
             action(ms, 'Mettre à jour la configuration (.elpro.json)…', self.mettre_a_jour_config),
             action(ms, 'Liste de log de la centrale (XML)…', self.liste_log_xml),
@@ -224,6 +227,9 @@ class MainWindow(QMainWindow):
         self.action_importer.setEnabled(a)
         for x in self.actions_systeme:
             x.setEnabled(a)
+        tab = self.onglet_actif()
+        self.action_relire.setEnabled(not self.occupe and tab is not None
+                                      and bool((self.magasin.acces(tab.sid) or {}).get('adresse')))
         self.action_tout_recuperer.setEnabled(not self.occupe and any((self.magasin.acces(s['id']) or {}).get('adresse')
                                                                       for s in self.magasin.systemes()))
         self._maj_export()
@@ -432,7 +438,19 @@ class MainWindow(QMainWindow):
             self._maj_etat()
         return ok
 
-    def recuperer_logs(self, tab=None, forcer=False):
+    def relire_logs(self, tab=None):
+        """Système › Relire tous les logs de la centrale (v1.4.1) : complète les colonnes jamais lues."""
+        tab = tab or self.onglet_actif()
+        if tab is None or not (self.magasin.acces(tab.sid) or {}).get('adresse'):
+            return
+        if QMessageBox.question(self, f'Relire tous les logs — {tab.nom}',
+                                'Tous les fichiers encore présents sur la centrale (environ 7 jours) vont être '
+                                'téléchargés à nouveau. Les données déjà importées ne changent pas ; seules les '
+                                'colonnes qui n\'avaient pas été lues sont ajoutées. Continuer ?',
+                                QMessageBox.Yes | QMessageBox.No, QMessageBox.No) == QMessageBox.Yes:
+            self.recuperer_logs(tab, relire=True)
+
+    def recuperer_logs(self, tab=None, forcer=False, relire=False):
         tab = tab or self.onglet_actif()
         if tab is None:
             return
@@ -440,7 +458,7 @@ class MainWindow(QMainWindow):
             return
         self._occuper(True)
         try:
-            d = ProgressionRecuperation(self, self.chemin_base, tab.sid, forcer)
+            d = ProgressionRecuperation(self, self.chemin_base, tab.sid, forcer, relire=relire)
             d.exec()
             d.thread.wait()
         finally:
@@ -449,14 +467,16 @@ class MainWindow(QMainWindow):
         self.reouvrir_base()
         tab.rafraichir(apres_import=True)
         self._maj_taille()
-        self.afficher_recuperation(tab, rap)
+        self.afficher_recuperation(tab, rap, relire)
 
-    def afficher_recuperation(self, tab, rap):
+    def afficher_recuperation(self, tab, rap, relire=False):
         """Affichage selon le statut du rapport (textes du moteur)."""
-        titre = f'Récupérer les logs — {tab.nom}'
+        titre = f'{"Relire tous les logs" if relire else "Récupérer les logs"} — {tab.nom}'
         st, msg = rap['statut'], rap['message']
         if st == 'ok':
-            self.rapport = RapportImport(self, [(None, rap['imports'])], titre=titre, resume=msg,
+            # relecture : le message du moteur, puis seulement les fichiers complétés, nouveaux ou en erreur
+            imports = [r for r in rap['imports'] if not relire or r['statut'] != 'deja_importe']
+            self.rapport = RapportImport(self, [(None, imports)], titre=titre, resume=msg,
                                          alerte=rap.get('alerte'))
             self.rapport.exec()
         elif st in ('rien_de_nouveau', 'annule'):
@@ -471,7 +491,7 @@ class MainWindow(QMainWindow):
             rep = QMessageBox.question(self, titre, f'{msg}\n\nImporter quand même dans ce système ?',
                                        QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
             if rep == QMessageBox.Yes:
-                self.recuperer_logs(tab, forcer=True)
+                self.recuperer_logs(tab, forcer=True, relire=relire)
         else:                                       # injoignable, introuvable, erreur
             QMessageBox.critical(self, titre, msg)
 

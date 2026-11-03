@@ -40,6 +40,9 @@ Ordre de grandeur : **5 à 6 Mo par site et par an**. Les valeurs réelles varie
 | Écart de plus d'1,5 intervalle entre deux lignes | Trou de données |
 | Log d'une autre radio (n° de série différent) | Rien n'est importé sans confirmation |
 | Colonne au nom inconnu | Ignorée, avertissement |
+| Colonne sans numéro (entrée d'un seul registre, ex. `ANA`) | Premier registre de l'entrée (v1.4.1) |
+| Config au format 1 (ELPRO Config < 1.6.1) avec une entrée en tension AI3/AI4 | Enregistrée telle quelle ; mesures lues avec l'échelle programmée dans la radio (étalonnage, sinon 0-5 V). Après reprogrammation : nouvelle version de config (format 2) à partir de la date de reprogrammation (v1.4.1) |
+| Relecture d'un fichier déjà importé (*Relire tous les logs de la centrale*) | Seuls les registres sans aucun point sur la période du fichier sont ajoutés ; le reste, la couverture et la liste des fichiers ne changent pas (v1.4.1) |
 
 ## Tables
 

@@ -148,8 +148,11 @@ def _norm(txt):
 # --------------------------------------------------------------------------------------------
 # Récupération complète
 # --------------------------------------------------------------------------------------------
-def recuperer(magasin, sid, forcer=False, progression=None, annuler=None, session=None):
+def recuperer(magasin, sid, forcer=False, progression=None, annuler=None, session=None, relire=False):
     """Télécharge et importe les logs de la centrale du système sid qui ne sont pas encore dans la base.
+
+    relire=True (v1.4.1) : télécharge TOUS les fichiers encore présents sur la centrale ; les fichiers déjà
+    importés complètent seulement les colonnes qui n'avaient pas été lues (rien d'existant n'est modifié).
 
     progression(n, total, nom) : appelée avant chaque fichier. annuler() -> True pour arrêter.
     forcer=True : importer même si la centrale connectée ne semble pas être celle du système
@@ -193,7 +196,7 @@ def recuperer(magasin, sid, forcer=False, progression=None, annuler=None, sessio
         if noms:
             rap['plus_ancien'] = heure_fichier(noms[0])
         deja = magasin.noms_fichiers(sid)
-        nouveaux = [n for n in noms if n not in deja]
+        nouveaux = list(noms) if relire else [n for n in noms if n not in deja]
         rap['nouveaux'] = len(nouveaux)
         # 3. téléchargement + import, du plus ancien au plus récent, en un seul lot (v1.2) :
         #    rapide (chaque bloc réécrit une fois) ; ce qui est importé avant une coupure est gardé.
@@ -210,7 +213,7 @@ def recuperer(magasin, sid, forcer=False, progression=None, annuler=None, sessio
                 except ErreurCentrale as e:
                     coupure = (e, k)
                     break
-                imp = magasin.importer_octets(sid, octets, nom, forcer_serie=forcer)
+                imp = magasin.importer_octets(sid, octets, nom, forcer_serie=forcer, completer=relire)
                 rap['imports'] += imp
                 if any(r['statut'] == 'serie_differente' for r in imp):
                     rap.update(statut='mauvaise_centrale', message=imp[0]['message'])
@@ -226,6 +229,11 @@ def recuperer(magasin, sid, forcer=False, progression=None, annuler=None, sessio
             progression(len(nouveaux), len(nouveaux), '')
         nb_ok = sum(1 for r in rap['imports'] if r['statut'] == 'importe')
         erreurs = [r for r in rap['imports'] if r['statut'] == 'erreur']
+        if relire:
+            nb_c = sum(1 for r in rap['imports'] if r['statut'] == 'complete')
+            rap.update(statut='ok', message=f'{len(nouveaux)} fichier(s) relu(s) : {nb_ok} nouveau(x), {nb_c} complété(s).'
+                       + (f' {len(erreurs)} en erreur.' if erreurs else ''))
+            return _fin(magasin, sid, rap)
         if not nouveaux:
             rap.update(statut='rien_de_nouveau', message='Aucun nouveau fichier sur la centrale.')
         else:

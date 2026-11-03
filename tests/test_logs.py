@@ -389,9 +389,9 @@ class TestV14Analogique(unittest.TestCase):
         R = {r['nom']: r for r in p['radios']}
         R['A-SM1']['peripheriques'].append({'type': 'ENTREE_ANA', 'nom': 'NIVEAU', 'ai': 2, 'mode': 'courant',
                                             'mesure_bas': 0, 'mesure_haut': 10, 'unite': 'bar'})
-        R['A-BASE']['peripheriques'].append({'type': 'ENTREE_ANA', 'nom': 'CAM1_BATTV', 'ai': 4, 'mode': 'tension',
-                                             'unite': 'V', 'etalonnage': {'reg_bas': 8192, 'reg_haut': 30720,
-                                                                          'eng_bas': 0, 'eng_haut': 25}})
+        # ELPRO Config v2.4 : AI2 en tension = 0-20 V, Span 2048 (8192 = 0 V, 49152 = 20 V)
+        R['A-BASE']['peripheriques'].append({'type': 'ENTREE_ANA', 'nom': 'CAM1_BATTV', 'ai': 2, 'mode': 'tension',
+                                             'unite': 'V'})
         R['A-F1']['peripheriques'].append({'type': 'SORTIE_ANA', 'nom': 'VANNE', 'ao': 1})
         return p
 
@@ -400,9 +400,10 @@ class TestV14Analogique(unittest.TestCase):
         pr = cat['par_registre']
         batt, niv, ao = pr[35301], pr[35302], pr[45001]
         self.assertEqual((batt['genre'], batt['famille'], batt['unite'], batt['station']), ('ANA', 'ANALOGIQUES', 'V', 'A-BASE'))
+        self.assertEqual(batt['libelle'], 'CAM1_BATTV (AI2)')
         self.assertEqual((niv['genre'], niv['unite'], niv['libelle']), ('ANA', 'bar', 'NIVEAU (AI2)'))
         self.assertEqual((ao['genre'], ao['unite'], ao['libelle']), ('CONSIGNE', 'mA', 'VANNE (AO1)'))
-        self.assertEqual(L.decoder(batt, 8192 + 12 * 901.12), 12.0)
+        self.assertEqual(L.decoder(batt, 8192 + 12 * 2048), 12.0)
         self.assertEqual(L.decoder(niv, 32768), 5.0)
         self.assertEqual(L.decoder(ao, 49152), 20.0)
         self.assertIsNone(L.decoder(niv, 0))
@@ -422,7 +423,7 @@ class TestV14Analogique(unittest.TestCase):
         lignes = ['TimeStamp: 2026-10-01 00:00:00', 'Unit Serial Number: 99000000002', '',
                   'Timestamp,ANA01,ANA02,AO01,']
         for i in range(10):
-            lignes.append(f'2026-10-01 00:{i:02d}:00,{8192 + int(12.5 * 901.12)},{16384 + 2048 * i},49152,')
+            lignes.append(f'2026-10-01 00:{i:02d}:00,{8192 + int(12.5 * 2048)},{16384 + 2048 * i},49152,')
         r = m.importer_octets(sid, ('\n'.join(lignes) + '\n').encode(), 'data.csv')
         self.assertEqual(r[0]['statut'], 'importe', r)
         cat = m.catalogue(sid)
@@ -431,6 +432,80 @@ class TestV14Analogique(unittest.TestCase):
         self.assertEqual([round(v, 2) for _, _, v in segs if v is not None][:3], [0.0, 0.62, 1.25])
         self.assertEqual({round(v, 1) for _, _, v in m.segments_decodes(sid, cat['par_registre'][35301], t0, t1)
                           if v is not None}, {12.5})
+
+
+
+class TestV141ColonneSansNumero(unittest.TestCase):
+    """Entrée de log d'un seul registre : la radio écrit « ANA » et non « ANA01 » (constaté sur radio)."""
+
+    def test_resolution(self):
+        regs, avert = L.resoudre_colonnes(['BATTV01', 'ANA', 'ANA_FAIL01', 'RADAR', ''])
+        self.assertEqual((regs, avert), ([30501, 35301, 15801, 35201, None], []))
+
+    def test_relire_complete_sans_rien_changer(self):
+        d = tempfile.mkdtemp(); self.addCleanup(shutil.rmtree, d, True)
+        m = L.Magasin(os.path.join(d, 'a.db')); self.addCleanup(m.fermer)
+        sid = m.ajouter_config(TestV14Analogique().projet())['systeme_id']
+        lignes = ['TimeStamp: 2026-10-01 00:00:00', 'Unit Serial Number: 99000000004', '',
+                  'Timestamp,COMFLAGS02,BATTV01,ANA,']
+        for i in range(20):
+            lignes.append(f'2026-10-01 00:{i:02d}:00,0,{8192 + 13 * 1024 + i},{8192 + int((12 + i / 10) * 2048)},')
+        octets = ('\n'.join(lignes) + '\n').encode()
+        # 1er import comme la v1.4.0 : la colonne « ANA » n'est pas reconnue
+        m.definir_profil(sid, {k: v for k, v in L.PROFIL_STANDARD.items() if k != 'ANA'})
+        r = m.importer_octets(sid, octets, 'x.csv')[0]
+        self.assertEqual(r['statut'], 'importe')
+        m.definir_profil(sid, None)
+        cat = m.catalogue(sid)
+        t0, t1 = T_DEBUT, T_DEBUT + 1200
+        self.assertEqual([v for _, _, v in m.segments(sid, 35301, t0, t1)], [])
+        batt_avant = m.segments(sid, 30501, t0, t1)
+        n_avant = m.nb_points(sid)
+        # même fichier sans « completer » : déjà importé
+        self.assertEqual(m.importer_octets(sid, octets, 'x.csv')[0]['statut'], 'deja_importe')
+        # relecture : seule la colonne manquante est ajoutée
+        r = m.importer_octets(sid, octets, 'x.csv', completer=True)[0]
+        self.assertEqual(r['statut'], 'complete', r)
+        self.assertIn('ANA', r['message'])
+        vals = [v for _, _, v in m.segments_decodes(sid, cat['par_registre'][35301], t0, t1)]
+        self.assertEqual((vals[0], round(vals[-1], 1)), (12.0, 13.9))
+        self.assertEqual(m.segments(sid, 30501, t0, t1), batt_avant)        # rien d'existant n'a bougé
+        self.assertEqual(len(m.fichiers(sid)), 1)
+        self.assertGreater(m.nb_points(sid), n_avant)
+        # 2e relecture : plus rien à compléter
+        r = m.importer_octets(sid, octets, 'x.csv', completer=True)[0]
+        self.assertEqual(r['statut'], 'deja_importe')
+
+class TestV141AncienFormat(unittest.TestCase):
+    """Une config au format 1 (ELPRO Config < 1.6.1) garde l'échelle réellement programmée dans la radio."""
+
+    def projet(self, version, **per):
+        p = charger(PROJET_A); p['version'] = version
+        p['radios'][0]['peripheriques'].append(dict({'type': 'ENTREE_ANA', 'nom': 'CAM1_BATTV', 'mode': 'tension',
+                                                     'unite': 'V'}, **per))
+        return p
+
+    def test_echelles(self):
+        et = {'reg_bas': 8192, 'reg_haut': 30720, 'eng_bas': 0, 'eng_haut': 25}
+        c1 = L.catalogue(self.projet(1, ai=4, etalonnage=et))['par_registre'][35301]
+        self.assertEqual(c1['libelle'], 'CAM1_BATTV (AI2)')
+        self.assertEqual(L.decoder(c1, 8192 + 12 * 901.12), 12.0)
+        c0 = L.catalogue(self.projet(1, ai=4))['par_registre'][35301]          # sans étalonnage : 0-5 V
+        self.assertEqual(L.decoder(c0, 8192 + 4 * 8192), 4.0)
+        c2 = L.catalogue(self.projet(2, ai=2))['par_registre'][35301]          # format 2 : Span 2048
+        self.assertEqual(L.decoder(c2, 8192 + 12 * 2048), 12.0)
+
+    def test_stockage_et_nouvelle_version(self):
+        d = tempfile.mkdtemp(); self.addCleanup(shutil.rmtree, d, True)
+        m = L.Magasin(os.path.join(d, 'a.db')); self.addCleanup(m.fermer)
+        et = {'reg_bas': 8192, 'reg_haut': 28672, 'eng_bas': 0, 'eng_haut': 20}
+        sid = m.ajouter_config(self.projet(1, ai=4, etalonnage=et))['systeme_id']
+        self.assertEqual(L.decoder(m.catalogue(sid)['par_registre'][35301], 8192 + 12 * 1024), 12.0)
+        t = L.utc_depuis_texte('2026-11-10 08:00:00')
+        r = m.ajouter_config(dict(self.projet(2, ai=2), version_config='1.1'), valable_depuis=t)
+        self.assertEqual(r['statut'], 'version')
+        self.assertEqual(L.decoder(m.catalogue(sid, t - 60)['par_registre'][35301], 8192 + 12 * 1024), 12.0)
+        self.assertEqual(L.decoder(m.catalogue(sid, t + 60)['par_registre'][35301], 8192 + 12 * 2048), 12.0)
 
 
 if __name__ == '__main__':

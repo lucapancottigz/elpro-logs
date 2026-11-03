@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2026 Geoazimut SàRL (https://geoazimut.com). Tous droits réservés.
 """
-Moteur de génération ELPRO GeoAzimut (v2.3) — IMPLÉMENTATION DE RÉFÉRENCE.
+Moteur de génération ELPRO GeoAzimut (v2.4) — IMPLÉMENTATION DE RÉFÉRENCE.
 
 Entrée  : un projet (dict, format décrit dans 03_Modele_de_donnees.md).
 Sorties : - plan (dict)            -> utilisé par la page 2, le PDF et l'Excel
@@ -40,20 +40,34 @@ TYPES_ENTREE = {'CABLE': 1, 'LIDAR3': 3, 'LIDAR6': 6, 'ALARME_BT': 1, 'ENTREE': 
 TYPES_SORTIE_SIMPLE = ('SIRENE', 'FLASH', 'SIRENE_FLASH', 'CAMERA', 'SPOT', 'SORTIE')
 TYPES = set(TYPES_ENTREE) | set(TYPES_SORTIE_SIMPLE) | {'FEU', 'CAMERA_SPOT', 'RADAR', 'ENTREE_ANA', 'SORTIE_ANA'}
 
-# ---- E/S analogiques génériques (v2.0) : mesure seule (pas d'alarme radio) et consigne de sortie analogique
-# Entrée : AI1-AI4 en courant (0-20 mA, registres 30001-30004) ; AI3/AI4 en tension (0-5 V, registres 30009-30010).
-#          Brut : courant 8192 + mA x 2048 (4 mA = 16384, 20 mA = 49152) ; tension 8192 + V x 8192 (0 V = 8192, 5 V = 49152).
+# ---- E/S analogiques génériques (v2.0, corrigé v2.4 d'après le manuel 415U-2 « Address map ») :
+# Entrée en courant : AI1-AI4, registres 30001-30004, 8192 + mA x 2048 (0 mA = 8192, 4 mA = 16384, 20 mA = 49152).
+# Entrée en tension : AI1/AI2 0-20 V, registres 30009-30010 (E/S CConfig Ain5/Ain6), 8192 + V x 2048 (20 V = 49152) ;
+#                     AI3/AI4 0-5 V,  registres 30011-30012 (E/S CConfig Ain7/Ain8), 8192 + V x 8192 (5 V = 49152).
+# AI1 et AI2 ont TOUJOURS Zero 8192 / Span 2048, en courant comme en tension (lecture uniforme par la campbell).
 # Sortie : AO1/AO2 (registres 40001-40002), 4-20 mA : 16384 = 4 mA, 49152 = 20 mA.
 ANA_BASE = 35300             # mesures analogiques sur la base : 353nn
 AO_BASE = 45000              # consignes de sortie analogique sur la base : 450nn (écrites par la supervision)
 MAX_ANA, MAX_AO = 50, 20
-ANA_POINTS = {'courant': (16384, 49152, 4, 20, 'mA'), 'tension': (8192, 49152, 0, 5, 'V')}
+ANA_POINTS = {'courant': (16384, 49152, 4, 20, 'mA'), 'tension': (8192, 49152, 0, 20, 'V'),
+              'tension_5v': (8192, 49152, 0, 5, 'V')}
 AO_POINTS = (16384, 49152, 4, 20, 'mA')
+FORMAT_PROJET = 2            # v2.4 : numéro du format du fichier .elpro.json (clé « version »)
+# Réglages fixes des entrées en tension de la radio (E/S CConfig) : nom, Zero, Span, RegHigh, EngHigh
+AI_TENSION = {'Ain5': ('AI1 (0-20V)', 8192, 2048, 49152, 20), 'Ain6': ('AI2 (0-20V)', 8192, 2048, 49152, 20),
+              'Ain7': ('AI3 (0-5V)', 8192, 8192, 49152, 5), 'Ain8': ('AI4 (0-5V)', 8192, 8192, 49152, 5)}
+
+
+def points_ai(p):
+    """(registre bas, registre haut, valeur basse, valeur haute, unité) de l'échelle native de l'entrée."""
+    if p.get('mode', 'courant') == 'courant':
+        return ANA_POINTS['courant']
+    return ANA_POINTS['tension'] if p['ai'] in (1, 2) else ANA_POINTS['tension_5v']
 
 
 def registre_ai(p):
     """Registre radio d'une entrée analogique générique."""
-    return 30000 + p['ai'] if p.get('mode', 'courant') == 'courant' else 30006 + p['ai']
+    return 30000 + p['ai'] if p.get('mode', 'courant') == 'courant' else 30008 + p['ai']
 
 
 def _series(ana):
@@ -68,8 +82,9 @@ def _series(ana):
 
 
 def io_ai(p):
-    """Identifiant CConfig de l'entrée (page IO) : Ain1-4 en courant, Ain5/Ain6 = AI3/AI4 en tension."""
-    return f"Ain{p['ai']}" if p.get('mode', 'courant') == 'courant' else f"Ain{p['ai'] + 2}"
+    """Identifiant CConfig de l'entrée (page IO) : Ain1-4 en courant ; en tension Ain5/Ain6 = AI1/AI2 (0-20 V),
+    Ain7/Ain8 = AI3/AI4 (0-5 V)."""
+    return f"Ain{p['ai']}" if p.get('mode', 'courant') == 'courant' else f"Ain{p['ai'] + 4}"
 
 # Sorties d'un feu : (clé JSON, libellé, base du registre de commande)
 # Plan des commandes : rouge 401-410, orange clignotant 411-420, orange fixe 421-430,
@@ -112,7 +127,18 @@ FAILSAFE_COMMANDES = (401, 50)
 def normaliser_projet(projet):
     """Met à jour un projet d'une ancienne version du format (modifie et retourne le dict).
     - feu à 3 sorties : l'ancienne sortie « do_orange » devient l'orange clignotant (« do_orange_cli »).
+    - format 1 -> 2 (v2.4) : une entrée analogique en tension notée AI3/AI4 utilisait en réalité les registres
+      30009/30010, c'est-à-dire AI1/AI2 en tension (manuel 415U-2) : elle devient AI1/AI2, et son étalonnage
+      est retiré (AI1/AI2 ont toujours Span 2048).
     À appeler à l'ouverture d'un fichier ; valider() et calculer_plan() l'appliquent aussi sur une copie."""
+    if _a_migrer(projet):
+        for r in projet.get('radios', []):
+            for p in r.get('peripheriques', []):
+                if p.get('type') == 'ENTREE_ANA' and p.get('mode') == 'tension' and p.get('ai') in (3, 4):
+                    p['ai'] -= 2
+                    p.pop('etalonnage', None)
+    if 'radios' in projet:
+        projet['version'] = FORMAT_PROJET
     for r in projet.get('radios', []):
         for p in r.get('peripheriques', []):
             if p.get('type') == 'FEU':
@@ -121,6 +147,13 @@ def normaliser_projet(projet):
                 for cle, _l, _b in SORTIES_FEU:
                     p.setdefault(cle, None)
     return projet
+
+
+def _a_migrer(projet):
+    """True si le projet est au format 1 et contient une entrée analogique en tension (à convertir, v2.4)."""
+    return projet.get('version', 1) < 2 and any(
+        p.get('type') == 'ENTREE_ANA' and p.get('mode') == 'tension' and p.get('ai') in (3, 4)
+        for r in projet.get('radios', []) for p in r.get('peripheriques', []))
 
 
 def _normalise(projet):
@@ -193,7 +226,8 @@ def version_config(projet):
 def _contenu(projet):
     """Partie du projet qui définit la configuration (sans version ni historique), normalisée."""
     import json as _j
-    c = _j.loads(_j.dumps({'systeme': projet.get('systeme', {}), 'radios': projet.get('radios', [])}))
+    c = _j.loads(_j.dumps({'version': projet.get('version', 1), 'systeme': projet.get('systeme', {}),
+                           'radios': projet.get('radios', [])}))
     if not c['systeme'].get('ioplus_actif'):
         c['systeme'].pop('ioplus_actif', None)        # option absente = false : pas de différence pour les anciens projets
     return c
@@ -233,7 +267,8 @@ def classer_modification(ancien, nouveau):
               amont, nom, inversion, textes, clé...)."""
     a, n = _contenu(_normalise(ancien)), _contenu(_normalise(nouveau))
     if a == n:
-        return None
+        # v2.4 : une entrée en tension convertie (format 1 -> 2) change les fichiers de la radio
+        return 'mineure' if (_a_migrer(ancien) or _a_migrer(nouveau)) else None
     paires = _radios_appariees(a['radios'], n['radios'])
     if paires is None:
         return 'majeure'
@@ -415,13 +450,16 @@ def valider(projet):
             elif t == 'ENTREE_ANA':
                 a, mode = p.get('ai'), p.get('mode', 'courant')
                 if mode not in ('courant', 'tension'):
-                    E.append(f'{n}/{pn} : mode « courant » (0-20 mA) ou « tension » (0-5 V).')
-                elif a not in (1, 2, 3, 4) or (mode == 'tension' and a not in (3, 4)):
-                    E.append(f'{n}/{pn} : AI1 à AI4 en courant, AI3 ou AI4 en tension.')
+                    E.append(f'{n}/{pn} : mode « courant » (0-20 mA) ou « tension » (AI1/AI2 0-20 V, AI3/AI4 0-5 V).')
+                elif a not in (1, 2, 3, 4):
+                    E.append(f'{n}/{pn} : entrée AI1 à AI4.')
                 elif a in ai_used: E.append(f'{n}/{pn} : AI{a} déjà utilisée par {ai_used[a]}.')
                 else: ai_used[a] = pn
                 E += _valider_echelle(n, pn, p)
                 E += _valider_reglages_ai(n, pn, p)
+                if p.get('etalonnage') is not None and a in (1, 2):
+                    E.append(f'{n}/{pn} : pas d\'étalonnage sur AI1/AI2 : Span toujours 2048 (0-20 mA / 0-20 V) ; '
+                             f'utiliser l\'échelle pour l\'affichage.')
             elif t == 'SORTIE_ANA':
                 o = p.get('ao')
                 if o not in (1, 2): E.append(f'{n}/{pn} : AO1 ou AO2 uniquement.')
@@ -679,7 +717,7 @@ def calculer_plan(projet):
         for p in sorted([p for p in S['periph'] if p['type'] == 'ENTREE_ANA'], key=registre_ai):
             an += 1
             mode = p.get('mode', 'courant')
-            rp1, rp2, e1, e2, ue = ANA_POINTS[mode]
+            rp1, rp2, e1, e2, ue = points_ai(p)
             A = {'adresse': ANA_BASE + an, 'nom': nomu(S['nom'], p['nom']), 'label': p['nom'], 'ai': p['ai'], 'mode': mode,
                  'distant': registre_ai(p), 'io': io_ai(p), 'rp1': rp1, 'rp2': rp2,
                  'dp1': p.get('mesure_bas', e1), 'dp2': p.get('mesure_haut', e2),
@@ -690,8 +728,9 @@ def calculer_plan(projet):
                 A.update(rp1=int(et['reg_bas']), rp2=int(et['reg_haut']), dp1=et['eng_bas'], dp2=et['eng_haut'],
                          unite=p.get('unite', 'V'))
             S['ana'].append(A)
+            gamme = '0-20 mA' if mode == 'courant' else ('0-20 V' if p['ai'] in (1, 2) else '0-5 V')
             ent = (f"AI{p['ai']} {'courant' if mode == 'courant' else 'tension'}, étalonnage" if et
-                   else f"AI{p['ai']} {'0-20 mA' if mode == 'courant' else '0-5 V'}")
+                   else f"AI{p['ai']} {gamme}")
             reg(A['adresse'], A['nom'], 'Mesure analogique', S['nom'],
                 f"{ent} : {A['rp1']} = {_fmt(A['dp1'])} {A['unite']}, {A['rp2']} = {_fmt(A['dp2'])} {A['unite']}")
         for p in sorted([p for p in S['periph'] if p['type'] == 'SORTIE_ANA'], key=lambda p: p['ao']):
@@ -935,7 +974,7 @@ def tag(nom, registre, style, invert=0, haut=None):
 
 
 def construire_noms_et_dashboard(S, st, registres):
-    noms = [(30009, 'AI3 (0-5V)'), (30010, 'AI4 (0-5V)')]
+    noms = [(30009, 'AI1 (0-20V)'), (30010, 'AI2 (0-20V)')]
     tags, groupes = [], []
     if S['role'] == 'base':
         noms += [(30007, 'BATTV'), (30401, 'RSSI')]
@@ -1026,7 +1065,7 @@ def construire_noms_et_dashboard(S, st, registres):
         for do in c['do']: S['noms_io'][f"Dot{do}"] = c['label'][:20]
     for R in S['radars']: S['noms_io'][f"Ain{R['ai']}"] = R['label'][:20]
     for X in S['ana'] + S['consignes']: S['noms_io'][X['io']] = X['label'][:20]
-    # v2.3 : les noms par défaut de 30009/30010 cèdent la place à une entrée analogique en tension sur AI3/AI4
+    # v2.3 : les noms par défaut de 30009/30010 cèdent la place à une entrée analogique en tension (AI1/AI2 depuis v2.4)
     surcharge = {X['distant'] for X in S['ana']}
     noms = [x for x in noms[:2] if x[0] not in surcharge] + noms[2:]
     vus, propre = set(), []
@@ -1170,9 +1209,20 @@ def _unite_xml(S, plan, gabarit):
             for champ, val in A['reglages'].items():
                 blk = _set(blk, champ, val)
             u = u[:g] + blk + u[h:]
+    # E/S en tension : réglages fixes (v2.4) — AI1/AI2 Span 2048 (0-20 V), AI3/AI4 Span 8192 (0-5 V)
+    etalonnees = {A['io'] for A in S['ana'] if 'Span' in A['reglages']}     # étalonnage (AI3/AI4) : déjà écrit
+    for io, (nom, zero, span, rh, eh) in AI_TENSION.items():
+        if io in etalonnees:
+            continue
+        g = u.find(f'<IO ID="{io}">'); h = u.find('</IO>', g)
+        blk = u[g:h]
+        for champ, val in (('Name', nom), ('Zero', zero), ('Span', span), ('RegLow', 8192), ('RegHigh', rh),
+                           ('EngLow', 0), ('EngHigh', eh)):
+            blk = _set(blk, champ, val)
+        u = u[:g] + blk + u[h:]
     # E/S : noms, anti-rebond
     for io, nom in S['noms_io'].items():
-        u, n = re.subn(rf'(<IO ID="{io}">\s*)<Name>[^<]*</Name>', r'\g<1>' + C('Name', nom), u, count=1)
+        u, n = re.subn(rf'(<IO ID="{io}">\s*)<Name(?: d="C")?>[^<]*</Name>', r'\g<1>' + C('Name', nom), u, count=1)
         assert n == 1, io
     for io, val in S['debounce'].items():
         u, n = re.subn(rf'(<IO ID="{io}">\s*<Name(?: d="C")?>[^<]*</Name>\s*)<DebounceTime>[^<]*</DebounceTime>',
@@ -1256,7 +1306,7 @@ LISTE_LOG = [('COMFLAGS', 15101, 20), ('BATTV_FAIL', 15201, 20), ('RSSI_FAIL', 1
 # liste standard des centrales, identique sur tous les sites (noms reconnus par ELPRO Logs)
 LOG_REGLAGES = {'Scan Rate': 30, 'Records per File': 2880}     # à saisir à la main : absents de l'export XML
 # lignes AIn du XML -> ID d'E/S CConfig (index 0 = registre 30001)
-_AIN_IDS = ['Ain1', 'Ain2', 'Ain3', 'Ain4', 'VSupply', 'V24', 'VBatt1', 'VExt', 'Ain5', 'Ain6']
+_AIN_IDS = ['Ain1', 'Ain2', 'Ain3', 'Ain4', 'VSupply', 'V24', 'VBatt1', 'VExt', 'Ain5', 'Ain6', 'Ain7', 'Ain8']
 
 
 def liste_log(plan):
@@ -1381,6 +1431,8 @@ def xml_radio(plan, S, ioplus_actif=False, maintenant=None):
         else:
             t, i = 'AIn', _AIN_IDS.index(io)
         return list(lignes_io[t].findall('tr'))[i].findall('val')
+    for io, (nom, zero, span, _rh, _eh) in AI_TENSION.items():      # v2.4 : réglages fixes des entrées en tension
+        v = ligne_io(io); v[0].text, v[1].text, v[2].text = nom, str(zero), str(span)
     for io, nom in S['noms_io'].items():
         ligne_io(io)[0].text = str(nom)
     for io, val in S['debounce'].items():
@@ -1509,7 +1561,7 @@ def importer_cdb(chemin):
         for k in ('_ident', '_system_name', '_cle'):
             r.pop(k, None)
     av.append('Les périphériques ne sont pas importés : les ajouter radio par radio.')
-    return {'version': 1, 'version_config': VERSION_DEFAUT, 'systeme': systeme, 'radios': radios}, av
+    return {'version': FORMAT_PROJET, 'version_config': VERSION_DEFAUT, 'systeme': systeme, 'radios': radios}, av
 
 
 def ioplus_actif(projet_ou_plan):

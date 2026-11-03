@@ -118,6 +118,17 @@ class TestRecuperation(unittest.TestCase):
         self.assertEqual((r['statut'], r['nouveaux']), ('ok', 1))
         self.assertEqual(self.m.periode(self.sid)[1] - self.m.periode(self.sid)[0], 3 * 86400)
 
+    def test_relire_toute_la_centrale(self):
+        r = R.recuperer(self.m, self.sid)
+        self.assertEqual(r['nouveaux'], 2)
+        n = self.m.nb_points(self.sid)
+        r = R.recuperer(self.m, self.sid, relire=True)
+        self.assertEqual((r['statut'], r['nouveaux']), ('ok', 2))
+        self.assertEqual([x['statut'] for x in r['imports']], ['deja_importe', 'deja_importe'])   # rien ne manquait
+        self.assertIn('2 fichier(s) relu(s)', r['message'])
+        self.assertEqual(self.m.nb_points(self.sid), n)
+        self.assertEqual(self.m.systemes()[0]['nb_fichiers'], 2)
+
     def test_import_manuel_puis_auto(self):
         self.m.importer_fichier(self.sid, self.logs[0])
         r = R.recuperer(self.m, self.sid)
