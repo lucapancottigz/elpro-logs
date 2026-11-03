@@ -73,6 +73,8 @@ m = L.Magasin(L.chemin_base_defaut())        # Documents\ELPRO Logs\elpro_logs.d
 # --- systèmes
 m.systemes()                     # [{id, cle, nom, serie, periode:(t0,t1)|None, nb_fichiers}] dans l'ordre
 m.ajouter_config(projet)         # dict .elpro.json -> {systeme_id, statut: nouveau|version|identique}
+    # v1.4.1 : un fichier au format 1 (ELPRO Config < 1.6.1) est gardé tel quel ; L.echelles_format_1(projet)
+    # donne l'échelle réellement programmée de ses entrées en tension AI3/AI4 (utilisée par catalogue)
 m.ajouter_config(projet, valable_depuis=t)   # mise à jour de config à partir de t (seconde UTC)
 m.configs(sid)                   # versions de config
 m.renommer(sid, nom); m.supprimer_systeme(sid); m.compacter_base()

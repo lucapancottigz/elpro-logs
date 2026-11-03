@@ -476,5 +476,37 @@ class TestV141ColonneSansNumero(unittest.TestCase):
         r = m.importer_octets(sid, octets, 'x.csv', completer=True)[0]
         self.assertEqual(r['statut'], 'deja_importe')
 
+class TestV141AncienFormat(unittest.TestCase):
+    """Une config au format 1 (ELPRO Config < 1.6.1) garde l'échelle réellement programmée dans la radio."""
+
+    def projet(self, version, **per):
+        p = charger(PROJET_A); p['version'] = version
+        p['radios'][0]['peripheriques'].append(dict({'type': 'ENTREE_ANA', 'nom': 'CAM1_BATTV', 'mode': 'tension',
+                                                     'unite': 'V'}, **per))
+        return p
+
+    def test_echelles(self):
+        et = {'reg_bas': 8192, 'reg_haut': 30720, 'eng_bas': 0, 'eng_haut': 25}
+        c1 = L.catalogue(self.projet(1, ai=4, etalonnage=et))['par_registre'][35301]
+        self.assertEqual(c1['libelle'], 'CAM1_BATTV (AI2)')
+        self.assertEqual(L.decoder(c1, 8192 + 12 * 901.12), 12.0)
+        c0 = L.catalogue(self.projet(1, ai=4))['par_registre'][35301]          # sans étalonnage : 0-5 V
+        self.assertEqual(L.decoder(c0, 8192 + 4 * 8192), 4.0)
+        c2 = L.catalogue(self.projet(2, ai=2))['par_registre'][35301]          # format 2 : Span 2048
+        self.assertEqual(L.decoder(c2, 8192 + 12 * 2048), 12.0)
+
+    def test_stockage_et_nouvelle_version(self):
+        d = tempfile.mkdtemp(); self.addCleanup(shutil.rmtree, d, True)
+        m = L.Magasin(os.path.join(d, 'a.db')); self.addCleanup(m.fermer)
+        et = {'reg_bas': 8192, 'reg_haut': 28672, 'eng_bas': 0, 'eng_haut': 20}
+        sid = m.ajouter_config(self.projet(1, ai=4, etalonnage=et))['systeme_id']
+        self.assertEqual(L.decoder(m.catalogue(sid)['par_registre'][35301], 8192 + 12 * 1024), 12.0)
+        t = L.utc_depuis_texte('2026-11-10 08:00:00')
+        r = m.ajouter_config(dict(self.projet(2, ai=2), version_config='1.1'), valable_depuis=t)
+        self.assertEqual(r['statut'], 'version')
+        self.assertEqual(L.decoder(m.catalogue(sid, t - 60)['par_registre'][35301], 8192 + 12 * 1024), 12.0)
+        self.assertEqual(L.decoder(m.catalogue(sid, t + 60)['par_registre'][35301], 8192 + 12 * 2048), 12.0)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -396,9 +396,32 @@ def resoudre_colonnes(colonnes, profil=None):
 # --------------------------------------------------------------------------------------------
 # Catalogue : ce que signifie chaque registre pour un système donné
 # --------------------------------------------------------------------------------------------
+def echelles_format_1(projet):
+    """v1.4.1 — Config enregistrée avant ELPRO Config 1.6.1 (format 1) : une entrée en tension « AI3/AI4 » est
+    convertie par le moteur v2.4 en AI1/AI2 Span 2048, mais la radio programmée avec ce fichier mesurait avec
+    l'ANCIENNE échelle (étalonnage, ou 0-5 V sur 8192-49152). Pour relire correctement ses logs, on garde
+    cette échelle : {(radio, nom du périphérique): {rp1, rp2, dp1, dp2}}."""
+    if not M._a_migrer(projet):
+        return {}
+    res = {}
+    for r in projet.get('radios', []):
+        for p in r.get('peripheriques', []):
+            if p.get('type') == 'ENTREE_ANA' and p.get('mode') == 'tension' and p.get('ai') in (3, 4):
+                et = p.get('etalonnage')
+                if et:
+                    e = {'rp1': et['reg_bas'], 'rp2': et['reg_haut'], 'dp1': et['eng_bas'], 'dp2': et['eng_haut']}
+                elif p.get('mesure_bas') is not None:
+                    e = {'rp1': 8192, 'rp2': 49152, 'dp1': p['mesure_bas'], 'dp2': p['mesure_haut']}
+                else:
+                    e = {'rp1': 8192, 'rp2': 49152, 'dp1': 0, 'dp2': 5}
+                res[(r.get('nom'), p.get('nom'))] = {k: float(v) for k, v in e.items()}
+    return res
+
+
 def catalogue(projet):
     """Projet .elpro.json -> dict(systeme, T, stations=[...], par_registre={reg: canal}).
     Chaque canal : registre, nom, libelle, genre, famille, station, unite, binaire, (radar)."""
+    anciennes = echelles_format_1(projet)
     plan = M.calculer_plan(projet)
     fam_de = {g: f for f, _, gs in FAMILLES for g in gs}
     stations, par_reg = [], {}
@@ -438,8 +461,10 @@ def catalogue(projet):
                             seuil_haut=seuil))
         for X, g in [(A, 'ANA') for A in S.get('ana', [])] + [(c, 'CONSIGNE') for c in S.get('consignes', [])]:
             es = f"AI{X['ai']}" if g == 'ANA' else f"AO{X['ao']}"
-            cs.append(canal(S, X['adresse'], g, X['nom'], f"{X['label']} ({es})", unite=X['unite'],
-                            echelle={k: float(X[k]) for k in ('rp1', 'rp2', 'dp1', 'dp2')}))
+            ech = {k: float(X[k]) for k in ('rp1', 'rp2', 'dp1', 'dp2')}
+            if g == 'ANA' and (S['nom'], X['label']) in anciennes:
+                ech = anciennes[(S['nom'], X['label'])]          # échelle réellement programmée dans la radio
+            cs.append(canal(S, X['adresse'], g, X['nom'], f"{X['label']} ({es})", unite=X['unite'], echelle=ech))
         # registres d'échec (alimentés par les mappings de la base)
         if S['role'] != 'base':
             presents = {'FAIL_BATTV': True, 'FAIL_RSSI': True, 'FAIL_DET': bool(S['detections']),
@@ -763,8 +788,11 @@ class Magasin:
     def ajouter_config(self, projet, valable_depuis=None):
         """Importe un .elpro.json (dict). Nouveau système, ou nouvelle version de config d'un système
         existant (même system_name). Renvoie dict(systeme_id, statut: 'nouveau'|'version'|'identique')."""
+        origine = json.loads(json.dumps(projet))
         projet = M.normaliser_projet(json.loads(json.dumps(projet)))
-        catalogue(projet)                         # valide le projet (lève ValueError sinon)
+        catalogue(origine)                        # valide le projet (lève ValueError sinon)
+        if M._a_migrer(origine):
+            projet = origine                      # v1.4.1 : format 1 gardé tel quel (échelle programmée dans la radio)
         s = projet['systeme']
         cle = (s.get('system_name') or s.get('nom_projet')).strip()
         nom = s.get('nom_projet') or cle

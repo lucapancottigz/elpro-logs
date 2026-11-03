@@ -5,7 +5,7 @@
 ```
 .\venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
-Attendu : `Ran 50 tests … OK` (36 tests du moteur + 14 de la récupération, v1.4.1). À lancer dans `build.bat` avant l'empaquetage, comme pour ELPRO Config (arrêt si échec).
+Attendu : `Ran 52 tests … OK` (38 tests du moteur + 14 de la récupération, v1.4.1). À lancer dans `build.bat` avant l'empaquetage, comme pour ELPRO Config (arrêt si échec).
 
 ## 2. Jeu de démonstration
 

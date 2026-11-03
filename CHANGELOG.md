@@ -6,12 +6,13 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Num
 
 ### Corrigé
 - Une entrée de la liste de log d'**un seul registre** (nombre = 1) donne, sur la radio, une colonne **sans numéro** (ex. `ANA` et non `ANA01`) : cette colonne était ignorée, et la mesure analogique d'un site qui n'en a qu'une n'apparaissait jamais. Elle est maintenant lue comme le premier registre de l'entrée. La colonne vide de fin de ligne n'est plus signalée.
+- Configuration enregistrée avant ELPRO Config 1.6.1 (format 1) avec une entrée en tension AI3/AI4 : elle est gardée telle quelle et ses mesures sont lues avec l'échelle réellement programmée dans la radio (étalonnage, sinon 0-5 V), et non avec l'échelle 0-20 V d'ELPRO Config v2.4. Après reprogrammation de la radio, ajouter le nouveau `.elpro.json` (format 2) comme nouvelle version à partir de la date de reprogrammation.
 
 ### Ajouté
 - **Système › Relire tous les logs de la centrale…** (après confirmation) : retélécharge tous les fichiers encore présents sur la centrale (environ 7 jours) et ajoute seulement les colonnes qui n'avaient pas été lues. Les données déjà importées, la période et la liste des fichiers ne changent pas. Rapport : « N fichier(s) relu(s) : x nouveau(x), y complété(s). » et les fichiers complétés. Grisé si la connexion à la centrale n'est pas configurée.
 
 ### Interne
-- Moteur Logs v1.4.1 (`completer=True` à l'import, `relire=True` à la récupération) ; copie du moteur d'ELPRO Config v2.4 (entrées en tension AI1/AI2 0-20 V) ; exemples `demo_site_A.json` / `demo_site_B.json` au format 2 ; 50 tests automatiques.
+- Moteur Logs v1.4.1 (`completer=True` à l'import, `relire=True` à la récupération) ; copie du moteur d'ELPRO Config v2.4 (entrées en tension AI1/AI2 0-20 V) ; exemples `demo_site_A.json` / `demo_site_B.json` au format 2 ; 52 tests automatiques.
 
 ## [1.4.0] — 2026-10-27
 

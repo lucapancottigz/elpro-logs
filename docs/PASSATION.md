@@ -40,7 +40,7 @@ Vues : frise d'état global, synthèse par station, détail par station, type de
 2. **Aucune règle métier dans l'interface** : pas de conversion de tension, de seuil, d'état ou de durée. Libellés, unités, couleurs d'état et seuils viennent de `elpro_logs`.
 3. **Aucune donnée réelle dans le dépôt**, qui est public : pas de `.elpro.json` ou de `.log` de site, pas de base `.db`, pas de nom de site, d'adresse WireGuard ni de n° de série réel. `.gitignore` contient `*.db`, `*.db-wal` et `*.db-shm`.
 4. Noms de fichiers de code en anglais ; commentaires, documentation et interface en français.
-5. Avant toute livraison : **`Ran 50 tests … OK`** (`tests/`), plus la recette de l'interface (`tests_ui/`) : `Recette interface : OK`. `build.bat` vérifie aussi l'exécutable (`app.py --verifier`).
+5. Avant toute livraison : **`Ran 52 tests … OK`** (`tests/`), plus la recette de l'interface (`tests_ui/`) : `Recette interface : OK`. `build.bat` vérifie aussi l'exécutable (`app.py --verifier`).
 6. Ne change pas l'`AppId` ni `AppPublisher` de l'installateur. AppUserModelID : `GeoAzimut.ELPROLogs`.
 
 ---
@@ -58,7 +58,7 @@ elpro-logs/
 │  └─ elpro_engine.py   ← COPIE du moteur d'ELPRO Config (v2.4) : signification des registres
 ├─ tools/make_demo_logs.py  ← génère des .log fictifs au format exact de la radio
 ├─ examples/            ← demo_site_A/B.json (fictifs ; B a un radar en cm) + logs/ (3 jours de B)
-├─ tests/               ← test_logs.py (36) + test_remote.py (14, avec une fausse centrale HTTP)
+├─ tests/               ← test_logs.py (38) + test_remote.py (14, avec une fausse centrale HTTP)
 ├─ tests_ui/            ← recette automatique de l'interface
 ├─ installer/           ← elpro_logs.iss + génération de la ressource de version
 └─ docs/                ← 00_LISEZMOI, 01_Architecture, 02_Ecrans, 03_Stockage, 04_Recette
@@ -141,7 +141,7 @@ elpro-logs/
 | 1.3.0 | « Tout récupérer » dans la barre d'outils principale ; emplacement des données (déplacer, ouvrir une autre base, copie de sauvegarde, défaut) ; base introuvable au démarrage jamais recréée ; import atomique par fichier |
 | 1.3.1 | « Tout récupérer » : entrée cliquable de la barre de menus entre Système et Aide, barre d'outils retirée ; avertissement Python `\p` corrigé dans `engine/elpro_logs.py` |
 | 1.4.0 | Mesures et consignes analogiques (colonnes `ANA`, `ANA_FAIL`, `AO`), colonne « Mesures » en vue globale, second tableau de l'aide « Liste de log » ; colonnes `BATTTV` reconnues ; copie d'ELPRO Config v2.3 |
-| 1.4.1 | Colonne d'un seul registre sans numéro (ex. `ANA`) reconnue ; Système › Relire tous les logs de la centrale (complète les colonnes jamais lues) ; copie d'ELPRO Config v2.4 (entrées en tension AI1/AI2 0-20 V) |
+| 1.4.1 | Colonne d'un seul registre sans numéro (ex. `ANA`) reconnue ; Système › Relire tous les logs de la centrale (complète les colonnes jamais lues) ; copie d'ELPRO Config v2.4 (entrées en tension AI1/AI2 0-20 V) ; configs au format 1 gardées avec l'échelle programmée dans la radio |
 
 ---
 
@@ -156,7 +156,7 @@ elpro-logs/
 ## 10. Pour démarrer
 
 1. Clone le dépôt et lis `docs/00` à `docs/04`, le `CHANGELOG.md` et ce document.
-2. Crée le venv et lance les tests : `Ran 50 tests … OK`, puis la recette de l'interface : `Recette interface : OK`.
+2. Crée le venv et lance les tests : `Ran 52 tests … OK`, puis la recette de l'interface : `Recette interface : OK`.
 3. Lance l'application :
    - ajoute `examples/demo_site_B.json` ;
    - importe `examples/logs/*.log` ;
