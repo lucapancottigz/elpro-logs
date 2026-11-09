@@ -55,6 +55,14 @@
 
 **Désinstallation :** Paramètres › Applications › ELPRO Logs › Désinstaller. La base `Documents\ELPRO Logs\elpro_logs.db` est conservée.
 
+## Mises à jour
+
+ELPRO Logs vérifie une fois par jour, au démarrage, si une nouvelle version est publiée. S'il y en a une, une fenêtre propose **Installer et redémarrer**, **Plus tard** ou **Ignorer cette version**. L'installateur téléchargé est contrôlé par son empreinte SHA-256, puis ELPRO Logs se ferme normalement, Windows demande l'autorisation d'installer, et l'application se relance seule.
+
+La recherche peut aussi être lancée à la main : **Aide › Rechercher les mises à jour…**.
+
+La version 1.5.0, la première qui contient cette fonction, s'installe encore à la main (voir [Installation](#installation)).
+
 ## Démarrage rapide
 
 1. **Fichier › Ajouter un système (.elpro.json)…** › `examples\demo_site_B.json` (dans le dossier d'installation).

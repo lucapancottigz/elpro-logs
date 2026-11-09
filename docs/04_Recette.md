@@ -5,7 +5,7 @@
 ```
 .\venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
-Attendu : `Ran 70 tests … OK` (56 tests du moteur + 14 de la récupération, v1.5). À lancer dans `build.bat` avant l'empaquetage, comme pour ELPRO Config (arrêt si échec).
+Attendu : `Ran 91 tests … OK` (56 tests du moteur + 14 de la récupération + 21 de la mise à jour automatique, v1.5). À lancer dans `build.bat` avant l'empaquetage, comme pour ELPRO Config (arrêt si échec).
 
 ## 2. Jeu de démonstration
 
@@ -176,3 +176,25 @@ Sur Windows, avec deux PC qui partagent un dossier OneDrive (ou kDrive) :
 | P4 | Les deux PC ouverts : renommer un système sur le PC 1, attendre la synchronisation | Le PC 2 affiche le nouveau nom dans les 30 s (ou en revenant sur sa fenêtre) | |
 | P5 | Les deux PC ouverts, OneDrive en pause sur le PC 2 : modifier sur chaque PC, puis relancer OneDrive | Fenêtre « Base modifiée sur un autre PC » ou « Copie en conflit » ; rien n'est perdu | |
 | P6 | Fermer ELPRO Logs sans réseau ni OneDrive (dossier absent) | « Fermer quand même » ; au redémarrage avec le dossier : « Modifications de la dernière session enregistrées… » | |
+
+## 9. Mise à jour automatique (v1.5)
+
+Automatique, sans réseau : `tests_ui\ui_acceptance.py` remplace `U.chercher`, `U.telecharger` et `U.lancer_installation` par des fonctions de test (`QSettings` de recette isolés) et vérifie :
+
+- M1 « Rechercher les mises à jour… » juste avant « À propos » dans le menu Aide ; à jour : « ELPRO Logs est à jour (version X) », action grisée pendant la recherche ;
+- M2 erreur de recherche manuelle : avertissement avec le texte du moteur ;
+- M3 version 9.9.9 : « Mise à jour disponible », « ELPRO Logs 9.9.9 est disponible. Version installée : X. », notes, trois boutons ;
+- M4 « Ignorer cette version » : `maj/version_ignoree` = `9.9.9` ; la vérification automatique ne la propose pas, la recherche manuelle si ;
+- M5 vérification automatique faite il y a moins de 24 h : GitHub n'est pas interrogé ; M6 en erreur : rien affiché, rien mémorisé ;
+- M7 téléchargement annulé (aucun message), empreinte fausse (avertissement), vérifié (`installer_maj(chemin)`) ;
+- M8 `installer_maj` : `lancer_installation` appelé une fois, avec ce chemin, **après** `espace.fermer()` ; M9 lancement impossible : « … ELPRO Logs va se fermer : relancez-le pour continuer. », fermeture normale ;
+- M10 `--verifier` : « OK module de mise à jour et certificats HTTPS » en premier contrôle.
+
+Sur Windows, avec une release publiée plus récente (ou `ELPRO_VERSION_SIMULEE=1.4.0`) :
+
+| # | Contrôle | Attendu | OK |
+|---|---|---|---|
+| U1 | Démarrer ELPRO Logs avec `set ELPRO_VERSION_SIMULEE=1.4.0` | Après environ 3 s, « Mise à jour disponible » avec les notes de la dernière release | |
+| U2 | Installer et redémarrer | Barre de téléchargement en Mo, fermeture normale, fenêtre d'autorisation Windows, installation silencieuse, ELPRO Logs se relance | |
+| U3 | Refuser l'autorisation Windows | Rien n'est installé ; ELPRO Logs reste fermé, le relancer à la main | |
+| U4 | Sans réseau : Aide › Rechercher les mises à jour… | Avertissement « Pas de connexion au serveur de mise à jour (GitHub)… » ; au démarrage, rien ne s'affiche | |

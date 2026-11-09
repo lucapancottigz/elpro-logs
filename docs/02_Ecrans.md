@@ -35,6 +35,7 @@ S'il n'y a encore aucun système : page d'accueil avec un grand bouton **« Ajou
 | Système | Renommer… | `m.renommer` |
 | Système | Supprimer ce système… | Double confirmation (« Toutes les valeurs importées de ce système seront effacées. ») → `m.supprimer_systeme(sid)` puis `m.compacter_base()`. |
 | Aide | Liste de log à configurer sur la centrale | Fenêtre avec `L.REGLAGES_STANDARD` et le tableau `L.LISTE_STANDARD` (Nom, 1er registre, Nombre), puis un second tableau `L.LISTE_ANALOGIQUE` titré « Si le site a des entrées ou sorties analogiques, ajouter aussi : » et la note « Le nombre = nombre d'entrées (ou de sorties) analogiques du site. Les XML générés par ELPRO Config 1.5+ contiennent déjà la bonne liste. » (v1.4) ; Copier copie les deux tableaux, bouton Copier. |
+| Aide | Rechercher les mises à jour… | Recherche de la dernière release (`RechercheMaj`, curseur d'attente, action grisée pendant la recherche). Erreur : avertissement « Mise à jour » ; à jour : « ELPRO Logs est à jour (version X) » ; sinon « Mise à jour disponible » (Installer et redémarrer / Plus tard / Ignorer cette version), même pour une version ignorée. (v1.5) |
 | Aide | À propos | Comme ELPRO Config : nom, version, copyright, site, licences tierces. |
 
 ### « Tout récupérer » dans la barre de menus (v1.3.1)

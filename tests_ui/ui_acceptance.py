@@ -29,6 +29,8 @@ import elpro_remote as R  # noqa: E402
 sys.path.insert(0, os.path.join(RACINE, 'tests'))
 from test_remote import FausseCentrale  # noqa: E402
 from version import APP_VERSION  # noqa: E402
+import updater as U  # noqa: E402
+from ui import mise_a_jour as MJ  # noqa: E402
 
 sys.stdout.reconfigure(encoding='utf-8')
 MESSAGES = []
@@ -738,7 +740,122 @@ def main():
     ap = dialogs.AboutDialog(f, RACINE)
     verifier(ap.texte_fichier('Licence').startswith('ELPRO Logs') and ap.texte_fichier('Composants tiers'),
              f'À propos {APP_VERSION} : licence et composants tiers')
-    f.close()
+
+    print('== Mise à jour automatique (v1.5, sans réseau)')
+    os.environ.pop(U.VARIABLE_TEST, None)
+    textes_aide = [a.text() for a in f.menuBar().actions()[-1].menu().actions()]
+    verifier(textes_aide[-2:] == ['Rechercher les mises à jour…', 'À propos'],
+             f'action « Rechercher les mises à jour… » juste avant « À propos » : {textes_aide}')
+    info = {'version': '9.9.9', 'notes': 'Notes de **test** de la 9.9.9', 'page': 'https://example.invalid/v9.9.9',
+            'installateur': {'nom': 'ELPRO_Logs_Setup_9.9.9.exe', 'url': '', 'taille': 0}, 'empreintes': ''}
+    appels, maj = [], {'chercher': None, 'telecharger': None}
+
+    def chercher(depot, version, prefixe):
+        appels.append(('chercher', depot, version, prefixe))
+        if isinstance(maj['chercher'], Exception):
+            raise maj['chercher']
+        return maj['chercher']
+    U.chercher = chercher
+    fenetres = []
+    MJ.FenetreMaj.exec = lambda self: fenetres.append(self) or 0
+
+    def recherche_manuelle(resultat):
+        maj['chercher'] = resultat
+        MESSAGES.clear()
+        fenetres.clear()
+        f.action_maj.trigger()
+        en_cours = not f.action_maj.isEnabled()
+        attendre(lambda: f.action_maj.isEnabled())
+        return en_cours and QApplication.overrideCursor() is None
+    verifier(recherche_manuelle(None) and MESSAGES == [('information', 'Mise à jour',
+                                                         f'ELPRO Logs est à jour (version {APP_VERSION}).')]
+             and appels == [('chercher', U.DEPOT_LOGS, APP_VERSION, U.PREFIXE_LOGS)],
+             'M1 recherche manuelle, à jour : « ELPRO Logs est à jour (version …) », action grisée pendant la recherche')
+    erreur = 'Pas de connexion au serveur de mise à jour (GitHub). Vérifiez la connexion Internet.'
+    recherche_manuelle(U.ErreurMiseAJour(erreur))
+    verifier(MESSAGES == [('warning', 'Mise à jour', erreur)], 'M2 recherche manuelle, erreur : avertissement')
+    recherche_manuelle(info)
+    fw = fenetres[0] if fenetres else None
+    verifier(fw is not None and fw.windowTitle() == 'Mise à jour disponible'
+             and fw.entete.text() == f'ELPRO Logs 9.9.9 est disponible. Version installée : {APP_VERSION}.'
+             and 'Notes de test de la 9.9.9' in fw.notes.toPlainText() and fw.bouton_installer.isDefault()
+             and [fw.bouton_installer.text(), fw.bouton_plus_tard.text(), fw.bouton_ignorer.text()]
+             == ['Installer et redémarrer', 'Plus tard', 'Ignorer cette version'],
+             'M3 « Mise à jour disponible » : version, notes, trois boutons')
+    fw.ignorer()
+    verifier(QSettings().value('maj/version_ignoree') == '9.9.9', 'M4 « Ignorer cette version » mémorisé')
+    QSettings().remove('maj/derniere_verification')
+    appels.clear()
+    fenetres.clear()
+    f.verifier_maj_auto()
+    attendre(lambda: QSettings().value('maj/derniere_verification'))
+    verifier(len(appels) == 1 and not fenetres and not U.verification_due(QSettings().value('maj/derniere_verification')),
+             'M4 vérification automatique : version ignorée non proposée, date mémorisée')
+    recherche_manuelle(info)
+    verifier(len(fenetres) == 1, 'M4 recherche manuelle : la version ignorée est proposée')
+    appels.clear()
+    f.verifier_maj_auto()
+    QApplication.processEvents()
+    verifier(appels == [], 'M5 vérification automatique faite il y a moins de 24 h : GitHub non interrogé')
+    QSettings().remove('maj/version_ignoree')
+    QSettings().remove('maj/derniere_verification')
+    maj['chercher'] = U.ErreurMiseAJour(erreur)
+    MESSAGES.clear()
+    f.verifier_maj_auto()
+    attendre(lambda: appels and f._recherche_maj.isFinished())
+    QApplication.processEvents()
+    verifier(not MESSAGES and not QSettings().value('maj/derniere_verification'),
+             'M6 vérification automatique en erreur : rien affiché, rien mémorisé')
+
+    installateur = os.path.join(TMP, 'ELPRO_Logs_Setup_9.9.9.exe')
+    open(installateur, 'wb').close()
+
+    def telecharger(info_, progression=None, annule=None):
+        progression(1_500_000, 3_000_000)
+        if isinstance(maj['telecharger'], Exception):
+            raise maj['telecharger']
+        return installateur
+    U.telecharger = telecharger
+    installes = []
+    f.installer_maj = lambda chemin: installes.append(chemin)
+    MESSAGES.clear()
+    maj['telecharger'] = U.ErreurMiseAJour('Téléchargement annulé.')
+    MJ.FenetreMaj(f, info).installer()
+    verifier(not MESSAGES and not installes, 'M7 téléchargement annulé : aucun message')
+    maj['telecharger'] = U.ErreurMiseAJour('Le fichier téléchargé ne correspond pas à l\'empreinte publiée.')
+    MJ.FenetreMaj(f, info).installer()
+    verifier(MESSAGES == [('warning', 'Mise à jour', 'Le fichier téléchargé ne correspond pas à l\'empreinte publiée.')]
+             and not installes, 'M7 empreinte fausse : avertissement, rien installé')
+    maj['telecharger'] = None
+    MJ.FenetreMaj(f, info).installer()
+    verifier(installes == [installateur], 'M7 téléchargement vérifié : installer_maj(chemin)')
+    del f.installer_maj
+    ordre = []
+    fermer = f.espace.fermer
+    f.espace.fermer = lambda: ordre.append('fermer') or fermer()
+    U.lancer_installation = lambda chemin: ordre.append(('lancer', chemin))
+    f.installer_maj(installateur)
+    verifier(ordre == ['fermer', ('lancer', installateur)] and not f.isVisible(),
+             'M8 installer_maj : lancer_installation une fois, après espace.fermer()')
+    f = MainWindow(RACINE, *MW.ouvrir_base_demarrage())
+    f.show()
+
+    def lancement_impossible(chemin):
+        raise U.ErreurMiseAJour(f'Installateur introuvable : {chemin}')
+    U.lancer_installation = lancement_impossible
+    MESSAGES.clear()
+    f.installer_maj(installateur)
+    verifier(MESSAGES == [('warning', 'Mise à jour', f'Installateur introuvable : {installateur}\n\n'
+                           'ELPRO Logs va se fermer : relancez-le pour continuer.')] and not f.isVisible()
+             and not os.listdir(L.dossier_travail_defaut()),
+             'M9 lancement impossible : avertissement, fermeture normale (base publiée)')
+    import app
+    verif = os.path.join(TMP, 'verif')
+    app.verifier(verif)
+    with open(os.path.join(verif, 'verification.txt'), encoding='utf-8') as fv_:
+        lv = fv_.read().splitlines()
+    verifier(len(lv) > 2 and lv[2] == 'OK module de mise à jour et certificats HTTPS',
+             'M10 --verifier : « OK module de mise à jour et certificats HTTPS » en premier contrôle')
 
     print('== Base dans un dossier synchronisé, utilisée sur plusieurs PC (v1.5)')
     travail = L.dossier_travail_defaut()

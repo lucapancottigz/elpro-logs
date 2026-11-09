@@ -68,3 +68,16 @@ Name: "{autoprograms}\{#AppPublisher}\{#AppName}"; Filename: "{app}\ELPRO Logs.e
 [Run]
 ; Proposer de lancer l'application à la fin de l'installation
 Filename: "{app}\ELPRO Logs.exe"; Description: "Lancer {#AppName}"; Flags: nowait postinstall skipifsilent
+; Mise à jour automatique : relance après une installation silencieuse demandée par l'application (/RELANCER)
+Filename: "{app}\ELPRO Logs.exe"; WorkingDir: "{app}"; Flags: nowait runasoriginaluser; Check: RelancerApresMaj
+
+[Code]
+function RelancerApresMaj: Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 1 to ParamCount do
+    if CompareText(ParamStr(I), '/RELANCER') = 0 then
+      Result := True;
+end;

@@ -40,8 +40,10 @@ Vues : frise d'état global, synthèse par station, détail par station, type de
 2. **Aucune règle métier dans l'interface** : pas de conversion de tension, de seuil, d'état ou de durée. Libellés, unités, couleurs d'état et seuils viennent de `elpro_logs`.
 3. **Aucune donnée réelle dans le dépôt**, qui est public : pas de `.elpro.json` ou de `.log` de site, pas de base `.db`, pas de nom de site, d'adresse WireGuard ni de n° de série réel. `.gitignore` contient `*.db`, `*.db-wal` et `*.db-shm`.
 4. Noms de fichiers de code en anglais ; commentaires, documentation et interface en français.
-5. Avant toute livraison : **`Ran 70 tests … OK`** (`tests/`), plus la recette de l'interface (`tests_ui/`) : `Recette interface : OK`. `build.bat` vérifie aussi l'exécutable (`app.py --verifier`).
+5. Avant toute livraison : **`Ran 91 tests … OK`** (`tests/`), plus la recette de l'interface (`tests_ui/`) : `Recette interface : OK`. `build.bat` vérifie aussi l'exécutable (`app.py --verifier`).
 6. Ne change pas l'`AppId` ni `AppPublisher` de l'installateur. AppUserModelID : `GeoAzimut.ELPROLogs`.
+7. **`engine/updater.py` et `tests/test_updater.py` sont des fichiers de l'ingénieur, identiques dans elpro-logs et elpro-config** (v1.5) : jamais modifiés ici, toute correction est livrée aux deux dépôts.
+8. **Noms des fichiers de release obligatoires** : `ELPRO_Logs_Setup_X.Y.Z.exe` et `SHA256SUMS.txt` (produits par `build.bat`). La mise à jour automatique les cherche sous ces noms exacts : ne pas les changer.
 
 ---
 
@@ -51,14 +53,15 @@ Vues : frise d'état global, synthèse par station, détail par station, type de
 elpro-logs/
 ├─ app.py (dont --verifier), version.py, build.bat, requirements.txt
 ├─ ui/                  ← main_window, system_tab, overview_view, detail_view, journal_view,
-│                         files_view, workers (QThread), dialogs, common
+│                         files_view, workers (QThread), dialogs, common, mise_a_jour (v1.5)
 ├─ engine/
+│  ├─ updater.py        ← mise à jour automatique (releases GitHub, SHA-256), IDENTIQUE dans elpro-config
 │  ├─ elpro_logs.py     ← lecture des .log, base SQLite, calculs, journal, export CSV, période par défaut
 │  ├─ elpro_remote.py   ← récupération HTTP sur la centrale, mot de passe chiffré (DPAPI)
 │  └─ elpro_engine.py   ← COPIE du moteur d'ELPRO Config (v2.4) : signification des registres
 ├─ tools/make_demo_logs.py  ← génère des .log fictifs au format exact de la radio
 ├─ examples/            ← demo_site_A/B.json (fictifs ; B a un radar en cm) + logs/ (3 jours de B)
-├─ tests/               ← test_logs.py (56) + test_remote.py (14, avec une fausse centrale HTTP)
+├─ tests/               ← test_logs.py (56) + test_remote.py (14, avec une fausse centrale HTTP) + test_updater.py (21)
 ├─ tests_ui/            ← recette automatique de l'interface
 ├─ installer/           ← elpro_logs.iss + génération de la ressource de version
 └─ docs/                ← 00_LISEZMOI, 01_Architecture, 02_Ecrans, 03_Stockage, 04_Recette
@@ -68,6 +71,7 @@ elpro-logs/
 - **Heures :** le moteur travaille **uniquement en secondes UTC**, comme les radios. L'interface affiche et saisit en **heure suisse** avec `L.heure_locale()` et `L.utc_depuis_locale()`. L'axe des dates est calculé en Python : l'axe de pyqtgraph avec décalage horaire faisait planter PySide6 à partir de la 6.10.
 - **Threads :** l'import, la récupération et les calculs longs tournent dans un `QThread`, chacun avec **sa propre instance `L.Magasin`** (une connexion SQLite ne se partage pas entre threads).
 - **Base :** un seul fichier qui contient tous les systèmes, par défaut `Documents\ELPRO Logs\elpro_logs.db`. Depuis la v1.5, il peut être dans OneDrive ou kDrive et utilisé sur plusieurs PC : **SQLite ne l'ouvre jamais**, l'application travaille sur une copie locale (`L.Espace`, `%LOCALAPPDATA%\ELPRO Logs\travail`) et le réécrit d'un seul coup après chaque modification (`synchroniser()` au début de chaque action, `publier()` à la fin ; surveillance toutes les 30 s ; conflits sans rien écraser). L'interface ne fait jamais `L.Magasin` ni `L.verifier_base` sur le chemin choisi par l'utilisateur : `L.Espace` et `L.verifier_partage`. Son emplacement se règle dans Fichier › Emplacement des données (clé `QSettings` `base/chemin`, v1.3) et une base introuvable au démarrage n'est jamais recréée vide. Il **n'est pas supprimé** à la désinstallation. Sauvegarde : Fichier › Emplacement des données › Faire une copie de sauvegarde (application ouverte), ou copier le fichier application fermée.
+- **Mise à jour automatique (v1.5) :** `app.py` lance `verifier_maj_auto()` 3 s après l'affichage (au plus une fois par 24 h) ; Aide › Rechercher les mises à jour… ; l'installateur téléchargé est lancé dans `closeEvent`, après `espace.fermer()`, et relance l'application (`/RELANCER`, section `[Code]` de `elpro_logs.iss`). Pour tester toute la chaîne avant une publication, définir la variable d'environnement **`ELPRO_VERSION_SIMULEE`** (ex. `1.4.0`) : l'application se compare aux releases comme si elle était dans cette version. La toute première version qui contient cette fonction (1.5.0) s'installe encore à la main.
 - **Copie du moteur d'ELPRO Config :** si l'ingénieur change le plan de registres dans ELPRO Config, il livrera ici aussi une nouvelle copie d'`elpro_engine.py`.
 
 ---
@@ -142,7 +146,7 @@ elpro-logs/
 | 1.3.1 | « Tout récupérer » : entrée cliquable de la barre de menus entre Système et Aide, barre d'outils retirée ; avertissement Python `\p` corrigé dans `engine/elpro_logs.py` |
 | 1.4.0 | Mesures et consignes analogiques (colonnes `ANA`, `ANA_FAIL`, `AO`), colonne « Mesures » en vue globale, second tableau de l'aide « Liste de log » ; colonnes `BATTTV` reconnues ; copie d'ELPRO Config v2.3 |
 | 1.4.1 | Colonne d'un seul registre sans numéro (ex. `ANA`) reconnue ; Système › Relire tous les logs de la centrale (complète les colonnes jamais lues) ; copie d'ELPRO Config v2.4 (entrées en tension AI1/AI2 0-20 V) ; configs au format 1 gardées avec l'échelle programmée dans la radio |
-| 1.5.0 | Base dans un dossier synchronisé (OneDrive, kDrive…) utilisée sur plusieurs PC : copie de travail locale, enregistrement après chaque modification, reprise des modifications de l'autre PC, choix en cas de conflit ; mot de passe des centrales par PC |
+| 1.5.0 | Base dans un dossier synchronisé (OneDrive, kDrive…) utilisée sur plusieurs PC : copie de travail locale, enregistrement après chaque modification, reprise des modifications de l'autre PC, choix en cas de conflit ; mot de passe des centrales par PC ; mise à jour automatique (Aide › Rechercher les mises à jour…) |
 
 ---
 
@@ -157,7 +161,7 @@ elpro-logs/
 ## 10. Pour démarrer
 
 1. Clone le dépôt et lis `docs/00` à `docs/04`, le `CHANGELOG.md` et ce document.
-2. Crée le venv et lance les tests : `Ran 70 tests … OK`, puis la recette de l'interface : `Recette interface : OK`.
+2. Crée le venv et lance les tests : `Ran 91 tests … OK`, puis la recette de l'interface : `Recette interface : OK`.
 3. Lance l'application :
    - ajoute `examples/demo_site_B.json` ;
    - importe `examples/logs/*.log` ;

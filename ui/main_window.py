@@ -11,13 +11,15 @@ from PySide6.QtWidgets import (QMainWindow, QTabWidget, QStackedWidget, QWidget,
 
 import elpro_engine as M
 import elpro_logs as L
+import updater as U
 from ui.common import lire_projet, cle_systeme, projet_normalise, pluriel, nombre
 from ui.dialogs import (AboutDialog, ProgressionImport, RapportImport, DateMiseEnService, AideListeLog,
                         site_affiche, ConnexionCentrale, ProgressionRecuperation, RapportRecuperationTout,
                         EmplacementDonnees, FILTRE_BASE)
 from ui.system_tab import SystemTab
+from ui.mise_a_jour import RechercheMaj, FenetreMaj, APP
 from ui.workers import Tache, Fonction, attendre_tous
-from version import APP_COMPANY, APP_COPYRIGHT, APP_WEBSITE
+from version import APP_COMPANY, APP_COPYRIGHT, APP_WEBSITE, APP_VERSION
 
 FILTRE_PROJET = 'Projet ELPRO Config (*.elpro.json *.json)'
 FILTRE_LOGS = 'Logs ELPRO (*.log *.zip *.csv);;Tous les fichiers (*)'
@@ -182,6 +184,8 @@ class MainWindow(QMainWindow):
         self.occupe = False                 # import ou récupération en cours
         self.ferme = False
         self.copies_signalees = set()       # copies en conflit du synchroniseur déjà signalées dans cette session
+        self._installateur = None           # mise à jour téléchargée : lancée à la fermeture
+        self._recherche_maj = None          # RechercheMaj en cours
         self.setWindowTitle('ELPRO Logs')
         self.resize(1400, 900)
         self.setAcceptDrops(True)
@@ -290,12 +294,58 @@ class MainWindow(QMainWindow):
 
         ma = self.menuBar().addMenu('&Aide')
         action(ma, 'Liste de log à configurer sur la centrale', lambda: AideListeLog(self).exec())
+        self.action_maj = action(ma, 'Rechercher les mises à jour…', self.rechercher_maj)
         action(ma, 'À propos', self.a_propos)
         # entrée cliquable de la barre de menus, entre Système et Aide (même action que dans Fichier)
         self.menuBar().insertAction(ma.menuAction(), self.action_tout_recuperer)
 
     def a_propos(self):
         AboutDialog(self, self.base).exec()
+
+    # ================================================================ mise à jour automatique (v1.5)
+    def verifier_maj_auto(self):
+        """Au démarrage (app.py, 3 s après l'affichage) : au plus une fois par 24 h, silencieuse sauf nouvelle version."""
+        U.nettoyer()
+        if self.ferme or not U.verification_due(QSettings().value('maj/derniere_verification', '')):
+            return
+        self._chercher_maj(manuelle=False)
+
+    def rechercher_maj(self):
+        """Aide › Rechercher les mises à jour… : affiche aussi « à jour » et les erreurs, propose une version ignorée."""
+        self.action_maj.setEnabled(False)
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        self._chercher_maj(manuelle=True)
+
+    def _chercher_maj(self, manuelle):
+        t = RechercheMaj()
+        t.fini.connect(lambda info, erreur: self._maj_trouvee(info, erreur, manuelle))
+        self._recherche_maj = t
+        t.start()
+
+    def _maj_trouvee(self, info, erreur, manuelle):
+        if manuelle:
+            QApplication.restoreOverrideCursor()
+            self.action_maj.setEnabled(True)
+        if self.ferme:
+            return
+        if not manuelle:
+            if erreur:
+                return                              # réessayé au prochain démarrage, rien d'affiché
+            QSettings().setValue('maj/derniere_verification', U.maintenant_iso())
+            if not U.a_proposer(info, QSettings().value('maj/version_ignoree', '')):
+                return
+        elif erreur:
+            QMessageBox.warning(self, 'Mise à jour', erreur)
+            return
+        elif info is None:
+            QMessageBox.information(self, 'Mise à jour', f'{APP} est à jour (version {APP_VERSION}).')
+            return
+        FenetreMaj(self, info).exec()
+
+    def installer_maj(self, chemin):
+        """Installateur vérifié : fermeture normale, puis lancement dans closeEvent."""
+        self._installateur = chemin
+        self.close()
 
     # ================================================================ onglets
     def _ajouter_onglet(self, s):
@@ -1033,4 +1083,10 @@ class MainWindow(QMainWindow):
                                          'et seront enregistrées au prochain démarrage d\'ELPRO Logs sur ce PC.',
                                          'Fermer quand même'):
                     break
+        if self._installateur:                      # base fermée : l'installateur ne touche pas à la copie locale
+            chemin, self._installateur = self._installateur, None
+            try:
+                U.lancer_installation(chemin)
+            except U.ErreurMiseAJour as x:
+                QMessageBox.warning(self, 'Mise à jour', f'{x}\n\nELPRO Logs va se fermer : relancez-le pour continuer.')
         e.accept()

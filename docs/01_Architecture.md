@@ -57,8 +57,9 @@ elpro_logs/
 │  ├─ journal_view.py     ← Journal des événements
 │  ├─ files_view.py       ← Fichiers importés, versions de config, liste de log
 │  ├─ workers.py          ← QThread : import, calculs longs
-│  └─ dialogs.py          ← rapport d'import, aide « liste de log », à propos
-├─ engine/                 ← fourni, NE PAS MODIFIER
+│  ├─ dialogs.py          ← rapport d'import, aide « liste de log », à propos
+│  └─ mise_a_jour.py      ← mise à jour automatique : RechercheMaj, TelechargementMaj, FenetreMaj (v1.5)
+├─ engine/                 ← fourni, NE PAS MODIFIER (dont updater.py : mise à jour automatique, v1.5)
 ├─ tools/, examples/, tests/  ← fournis
 └─ resources/app_icon.ico, app_icon.png   ← reprendre ceux d'ELPRO Config
 ```
@@ -162,6 +163,16 @@ Un **canal** est un `dict` : `registre`, `nom`, `libelle`, `genre`, `famille`, `
 - `publier()` : `L.ConflitPublication` → fenêtre de conflit ; `L.PublicationImpossible` → indicateur orange.
 - `_surveiller()` toutes les 30 s et à l'activation de la fenêtre (sauf import ou fenêtre modale en cours) : publie ce qui attend, sinon recharge si un autre PC a publié (`recharger_depuis_partage()`), et signale une fois par session chaque copie en conflit créée par le synchroniseur.
 - Fermeture : `magasin.fermer()`, puis `espace.fermer()` en boucle (conflit → choix ; impossible → « Réessayer / Fermer quand même », la copie locale est alors gardée).
+
+## Mise à jour automatique (v1.5)
+
+Module `engine/updater.py` (fourni, NE PAS MODIFIER, identique dans ELPRO Config) : dernière release de `lucapancottigz/elpro-logs` (API GitHub, sans compte), téléchargement de `ELPRO_Logs_Setup_X.Y.Z.exe` contrôlé avec `SHA256SUMS.txt`, lancement silencieux de l'installateur (`/RELANCER` : l'installateur relance l'application).
+
+- `ui/mise_a_jour.py` : `RechercheMaj` et `TelechargementMaj` (`QThread`, attendus par `attendre_tous()`), `FenetreMaj` (« Mise à jour disponible »).
+- `app.py` lance `MainWindow.verifier_maj_auto()` 3 s après `f.show()` (jamais dans `MainWindow` : la recette crée des fenêtres sans interroger GitHub). Au plus une fois par 24 h (`QSettings` `maj/derniere_verification`), silencieuse sauf nouvelle version non ignorée (`maj/version_ignoree`).
+- **Aide › Rechercher les mises à jour…** (avant « À propos ») : affiche aussi « à jour » et les erreurs, propose même une version ignorée.
+- `installer_maj(chemin)` ferme la fenêtre normalement ; `closeEvent` lance l'installateur **après** `espace.fermer()`. Lancement impossible : avertissement « … ELPRO Logs va se fermer : relancez-le pour continuer. », puis fermeture.
+- Recette : variable d'environnement `ELPRO_VERSION_SIMULEE` (ex. `1.4.0`) pour se comparer aux releases comme une ancienne version.
 
 ## Récupération depuis la centrale (v1.1)
 
