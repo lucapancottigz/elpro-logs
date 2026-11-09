@@ -776,7 +776,7 @@ def poste_courant():
 
 
 def nom_poste(poste):
-    """Nom affiché : le nom du PC seul (« PC-FIXE\\luca » -> « PC-FIXE »)."""
+    """Nom affiché : le nom du PC seul (« PC-FIXE\\utilisateur » -> « PC-FIXE »)."""
     return (poste or '?').split('\\')[0]
 
 

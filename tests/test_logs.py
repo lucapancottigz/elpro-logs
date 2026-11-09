@@ -523,7 +523,7 @@ class TestV15FichierPartage(unittest.TestCase):
         self.projet = charger(PROJET_B)
 
     def espace(self, pc):
-        return L.Espace(self.partage, dossier_travail=os.path.join(self.tmp, 'local_' + pc), poste=pc + '\\luca')
+        return L.Espace(self.partage, dossier_travail=os.path.join(self.tmp, 'local_' + pc), poste=pc + '\\utilisateur')
 
     def modifier(self, e, nom=None):
         m = L.Magasin(e.travail, creer=False, poste=e.poste)
@@ -722,28 +722,28 @@ class TestV15MotDePasseParPoste(unittest.TestCase):
         return m
 
     def test_chaque_pc_garde_son_mot_de_passe(self):
-        fixe, port = self.magasin('PC-FIXE\\luca'), self.magasin('PC-PORTABLE\\luca')
-        fixe.definir_acces(self.sid, '10.0.0.1', 'user', b'B64:FIXE')
+        fixe, port = self.magasin('PC-FIXE\\utilisateur'), self.magasin('PC-PORTABLE\\utilisateur')
+        fixe.definir_acces(self.sid, '192.0.2.1', 'user', b'B64:FIXE')
         acc = port.acces(self.sid)
-        self.assertEqual(acc['adresse'], '10.0.0.1')                    # adresse et utilisateur communs
+        self.assertEqual(acc['adresse'], '192.0.2.1')                    # adresse et utilisateur communs
         self.assertFalse(acc['mdp_ce_poste'])
-        port.definir_acces(self.sid, '10.0.0.1', 'user', b'B64:PORT')
+        port.definir_acces(self.sid, '192.0.2.1', 'user', b'B64:PORT')
         self.assertEqual(fixe.acces(self.sid)['mdp'], b'B64:FIXE')       # le portable n'a rien écrasé
         self.assertEqual(port.acces(self.sid)['mdp'], b'B64:PORT')
-        fixe.definir_acces(self.sid, '10.0.0.2', 'user')                 # None : mot de passe inchangé
+        fixe.definir_acces(self.sid, '192.0.2.2', 'user')                 # None : mot de passe inchangé
         self.assertEqual(fixe.acces(self.sid)['mdp'], b'B64:FIXE')
-        self.assertEqual(port.acces(self.sid)['adresse'], '10.0.0.2')
+        self.assertEqual(port.acces(self.sid)['adresse'], '192.0.2.2')
 
     def test_ancien_mot_de_passe_commun(self):
-        m = self.magasin('PC-FIXE\\luca')
-        m.cx.execute("INSERT INTO acces VALUES (?, '10.0.0.1', 'user', ?, NULL, NULL)", (self.sid, b'DPAPI:ancien'))
+        m = self.magasin('PC-FIXE\\utilisateur')
+        m.cx.execute("INSERT INTO acces VALUES (?, '192.0.2.1', 'user', ?, NULL, NULL)", (self.sid, b'DPAPI:ancien'))
         m.cx.commit()
         acc = m.acces(self.sid)
         self.assertEqual(acc['mdp'], b'DPAPI:ancien')                    # essayé tel quel (lisible sur le PC d'origine)
         self.assertFalse(acc['mdp_ce_poste'])
 
     def test_suppression_systeme(self):
-        m = self.magasin('PC-FIXE\\luca')
-        m.definir_acces(self.sid, '10.0.0.1', 'user', b'B64:x')
+        m = self.magasin('PC-FIXE\\utilisateur')
+        m.definir_acces(self.sid, '192.0.2.1', 'user', b'B64:x')
         m.supprimer_systeme(self.sid)
         self.assertEqual(m.cx.execute('SELECT COUNT(*) FROM mdp_postes').fetchone()[0], 0)
