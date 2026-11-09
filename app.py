@@ -9,9 +9,12 @@ sys.path.insert(0, os.path.join(BASE, 'engine'))
 # ses dépendances. Les importer ici garantit qu'elles sont embarquées dans l'exécutable.
 import io, re, gzip, json, zlib, sqlite3, tarfile, zipfile, hashlib, datetime, threading, csv, contextlib  # noqa: F401,E401
 import secrets, string, copy, zoneinfo, xml.etree.ElementTree  # noqa: F401,E401
+import time, uuid, shutil, getpass  # noqa: F401,E401  (copie de travail et publication, v1.5)
 import base64, html, socket, ctypes, urllib.request, urllib.error, http.client  # noqa: F401,E401  (elpro_remote)
+import json, ssl, hashlib, tempfile, urllib.parse, urllib.request, urllib.error  # noqa: F401,E401  (updater)
 import tzdata  # noqa: F401  (heure suisse sous Windows)
 
+from PySide6.QtCore import QTimer
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
@@ -30,6 +33,13 @@ def verifier(dossier):
     def controle(cond, texte):
         lignes.append(('OK ' if cond else 'ÉCHEC ') + texte)
 
+    try:                        # en premier : un exécutable sans SSL ne pourrait pas se mettre à jour
+        import ssl, updater as U
+        ssl.create_default_context()
+        U.version_tuple(APP_VERSION)
+        controle(True, 'module de mise à jour et certificats HTTPS')
+    except Exception:
+        lignes.append(f'ÉCHEC module de mise à jour et certificats HTTPS :\n{traceback.format_exc()}')
     try:
         controle(L.ZONE is not None, 'fuseau Europe/Zurich disponible (tzdata)')
         import elpro_remote as R
@@ -80,11 +90,14 @@ def main():
     app.setWindowIcon(QIcon(os.path.join(BASE, 'resources', 'app_icon.png')))
 
     from ui.main_window import MainWindow, ouvrir_base_demarrage
-    magasin = ouvrir_base_demarrage()      # base introuvable ou inutilisable : fenêtre de choix, jamais de base vide
-    if magasin is None:
+    ouverte = ouvrir_base_demarrage()      # base introuvable ou inutilisable : fenêtre de choix, jamais de base vide
+    if ouverte is None:
         sys.exit(0)
-    f = MainWindow(BASE, magasin)
+    espace, magasin = ouverte
+    f = MainWindow(BASE, espace, magasin)
     f.show()
+    # ici et non dans MainWindow : la recette interface crée des fenêtres sans jamais interroger GitHub
+    QTimer.singleShot(3000, f.verifier_maj_auto)
     autres = [a for a in sys.argv[1:] if os.path.isfile(a)]
     if autres:
         f.deposer(autres)

@@ -5,7 +5,7 @@
 ```
 .\venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
-Attendu : `Ran 52 tests … OK` (38 tests du moteur + 14 de la récupération, v1.4.1). À lancer dans `build.bat` avant l'empaquetage, comme pour ELPRO Config (arrêt si échec).
+Attendu : `Ran 91 tests … OK` (56 tests du moteur + 14 de la récupération + 21 de la mise à jour automatique, v1.5). À lancer dans `build.bat` avant l'empaquetage, comme pour ELPRO Config (arrêt si échec).
 
 ## 2. Jeu de démonstration
 
@@ -124,7 +124,7 @@ Sur Windows :
 | E3 | Fermer et relancer | La base du nouvel emplacement s'ouvre, tous les systèmes et connexions sont là (mot de passe non redemandé) | |
 | E4 | Renommer temporairement le dossier choisi en E2, relancer | Fenêtre « base introuvable » ; Quitter ; remettre le nom ; relancer : tout revient | |
 | E5 | Faire une copie de sauvegarde | Fichier créé ; « Ouvrir une base existante » sur cette copie : mêmes systèmes | |
-| E6 | Déplacer vers un dossier OneDrive ou un lecteur réseau | Avertissement affiché avant de continuer | |
+| E6 | Déplacer vers un lecteur réseau | Avertissement affiché avant de continuer (plus d'avertissement pour un dossier OneDrive ou kDrive depuis la v1.5) | |
 
 ## 6. Mesures et consignes analogiques (v1.4)
 
@@ -152,3 +152,49 @@ Sur Windows, avec la vraie centrale du site concerné (tunnel WireGuard activé)
 | L2 | Système › Relire tous les logs de la centrale… | Confirmation ; Non → rien ; Oui → progression, rapport « N fichier(s) relu(s) … » | |
 | L3 | Après la relecture | Nombre de fichiers et chiffres de la vue globale inchangés, sauf les nouvelles mesures | |
 | L4 | Système sans connexion configurée | Menu « Relire tous les logs de la centrale… » grisé | |
+
+## 8. Base dans un dossier synchronisé, utilisée sur plusieurs PC (v1.5)
+
+Automatique : `tests_ui\ui_acceptance.py` met la base dans un dossier « OneDrive » de test et simule l'autre PC par un second `L.Espace` (autre dossier de travail, poste `AUTRE-PC\x`) :
+
+- S1 après ajout d'un système et import, le dossier partagé ne contient que `elpro_logs.db` ; indicateur « Enregistré à hh:mm » ; Emplacement des données affiche le fichier partagé ; après la fermeture, le dossier de travail local est vide ;
+- S2 un renommage publié par l'autre PC est repris par la surveillance (« Base mise à jour : modifications de AUTRE-PC… ») ;
+- S3 conflit : « Garder les deux » crée la copie `elpro_logs (copie … ).db` et affiche la base de l'autre PC ; « Garder celle de ce PC » (Oui) écrit le nom de ce PC dans le fichier partagé ;
+- S4 base annoncée ouverte sur AUTRE-PC : avertissement avec son nom ; Quitter → rien de publié ;
+- S5 dossier partagé renommé pendant l'utilisation, puis import : indicateur orange ; fermeture « Fermer quand même » ; dossier remis : « Modifications de la dernière session enregistrées… », import présent ;
+- S7 ancienne base avec `elpro_logs.db-wal` à côté : ouverte sans perte, plus de `-wal` ;
+- S8 fichier `elpro_logs-AUTRE-PC.db` : « Copie en conflit » une seule fois par session ;
+- S9 connexion à la centrale vue d'un autre PC : « (enregistré sur un autre PC — saisir ici si nécessaire) » ; sa saisie ne change pas le mot de passe de ce PC.
+
+Sur Windows, avec deux PC qui partagent un dossier OneDrive (ou kDrive) :
+
+| # | Contrôle | Attendu | OK |
+|---|---|---|---|
+| P1 | PC 1 : déplacer la base dans le dossier OneDrive, importer un log | Le dossier OneDrive ne contient que `elpro_logs.db` ; « Enregistré à hh:mm » ; après la fermeture, `%LOCALAPPDATA%\ELPRO Logs\travail` est vide | |
+| P2 | PC 2 (synchronisé) : Ouvrir une base existante → ce fichier | Mêmes systèmes et données ; Connexion à la centrale : « (enregistré sur un autre PC — saisir ici si nécessaire) » ; saisir le mot de passe, Récupérer les logs | |
+| P3 | PC 1 : Récupérer les logs | Le mot de passe du PC 1 marche toujours | |
+| P4 | Les deux PC ouverts : renommer un système sur le PC 1, attendre la synchronisation | Le PC 2 affiche le nouveau nom dans les 30 s (ou en revenant sur sa fenêtre) | |
+| P5 | Les deux PC ouverts, OneDrive en pause sur le PC 2 : modifier sur chaque PC, puis relancer OneDrive | Fenêtre « Base modifiée sur un autre PC » ou « Copie en conflit » ; rien n'est perdu | |
+| P6 | Fermer ELPRO Logs sans réseau ni OneDrive (dossier absent) | « Fermer quand même » ; au redémarrage avec le dossier : « Modifications de la dernière session enregistrées… » | |
+
+## 9. Mise à jour automatique (v1.5)
+
+Automatique, sans réseau : `tests_ui\ui_acceptance.py` remplace `U.chercher`, `U.telecharger` et `U.lancer_installation` par des fonctions de test (`QSettings` de recette isolés) et vérifie :
+
+- M1 « Rechercher les mises à jour… » juste avant « À propos » dans le menu Aide ; à jour : « ELPRO Logs est à jour (version X) », action grisée pendant la recherche ;
+- M2 erreur de recherche manuelle : avertissement avec le texte du moteur ;
+- M3 version 9.9.9 : « Mise à jour disponible », « ELPRO Logs 9.9.9 est disponible. Version installée : X. », notes, trois boutons ;
+- M4 « Ignorer cette version » : `maj/version_ignoree` = `9.9.9` ; la vérification automatique ne la propose pas, la recherche manuelle si ;
+- M5 vérification automatique faite il y a moins de 24 h : GitHub n'est pas interrogé ; M6 en erreur : rien affiché, rien mémorisé ;
+- M7 téléchargement annulé (aucun message), empreinte fausse (avertissement), vérifié (`installer_maj(chemin)`) ;
+- M8 `installer_maj` : `lancer_installation` appelé une fois, avec ce chemin, **après** `espace.fermer()` ; M9 lancement impossible : « … ELPRO Logs va se fermer : relancez-le pour continuer. », fermeture normale ;
+- M10 `--verifier` : « OK module de mise à jour et certificats HTTPS » en premier contrôle.
+
+Sur Windows, avec une release publiée plus récente (ou `ELPRO_VERSION_SIMULEE=1.4.0`) :
+
+| # | Contrôle | Attendu | OK |
+|---|---|---|---|
+| U1 | Démarrer ELPRO Logs avec `set ELPRO_VERSION_SIMULEE=1.4.0` | Après environ 3 s, « Mise à jour disponible » avec les notes de la dernière release | |
+| U2 | Installer et redémarrer | Barre de téléchargement en Mo, fermeture normale, fenêtre d'autorisation Windows, installation silencieuse, ELPRO Logs se relance | |
+| U3 | Refuser l'autorisation Windows | Rien n'est installé ; ELPRO Logs reste fermé, le relancer à la main | |
+| U4 | Sans réseau : Aide › Rechercher les mises à jour… | Avertissement « Pas de connexion au serveur de mise à jour (GitHub)… » ; au démarrage, rien ne s'affiche | |

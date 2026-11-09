@@ -378,7 +378,7 @@ class TestV13(Base):
 
     def test_avertissement_emplacement(self):
         self.assertIsNotNone(L.avertissement_emplacement('//serveur/partage/elpro_logs.db'))
-        self.assertIn('synchronisé', L.avertissement_emplacement('/home/x/OneDrive - Geo/elpro_logs.db'))
+        self.assertIsNone(L.avertissement_emplacement('/home/x/OneDrive - Geo/elpro_logs.db'))   # v1.5 : pris en charge
         self.assertIsNone(L.avertissement_emplacement(os.path.join(self.tmp, 'elpro_logs.db')))
 
 class TestV14Analogique(unittest.TestCase):
@@ -510,3 +510,240 @@ class TestV141AncienFormat(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestV15FichierPartage(unittest.TestCase):
+    """v1.5 — Fichier partagé (OneDrive, kDrive…) jamais ouvert par SQLite ; copie de travail par PC."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.sync = os.path.join(self.tmp, 'OneDrive', 'ELPRO')
+        self.partage = os.path.join(self.sync, 'elpro_logs.db')
+        self.projet = charger(PROJET_B)
+
+    def espace(self, pc):
+        return L.Espace(self.partage, dossier_travail=os.path.join(self.tmp, 'local_' + pc), poste=pc + '\\utilisateur')
+
+    def modifier(self, e, nom=None):
+        m = L.Magasin(e.travail, creer=False, poste=e.poste)
+        try:
+            if nom is None:
+                m.ajouter_config(self.projet)
+            else:
+                sid = m.systemes()[0]['id']
+                m.renommer(sid, nom)
+        finally:
+            m.fermer()
+
+    def noms(self, chemin):
+        cx = __import__('sqlite3').connect(chemin)
+        try:
+            return [r[0] for r in cx.execute('SELECT nom FROM systemes')]
+        finally:
+            cx.close()
+
+    def fichiers_sync(self):
+        return sorted(os.listdir(self.sync))
+
+    def test_creation_et_aucun_fichier_sqlite_dans_le_dossier_synchronise(self):
+        a = self.espace('PC-FIXE')
+        self.assertTrue(a.ouvrir(creer=True)['cree'])
+        self.modifier(a)
+        a.publier()
+        self.assertEqual(self.fichiers_sync(), ['elpro_logs.db'])          # ni -wal, ni -shm, ni .tmp
+        self.assertTrue(L.verifier_base(self.partage)['ok'])
+        self.assertEqual(self.noms(self.partage), ['Demo Site B'])
+
+    def test_verifier_partage(self):
+        a = self.espace('PC-FIXE'); a.ouvrir(creer=True)
+        os.environ['LOCALAPPDATA'] = os.path.join(self.tmp, 'appdata')
+        try:
+            self.assertTrue(L.verifier_partage(self.partage)['ok'])
+            with open(os.path.join(self.sync, 'autre.db'), 'wb') as f:
+                f.write(b'pas une base')
+            self.assertFalse(L.verifier_partage(os.path.join(self.sync, 'autre.db'))['ok'])
+        finally:
+            del os.environ['LOCALAPPDATA']
+        self.assertEqual(sorted(os.listdir(self.sync)), ['autre.db', 'elpro_logs.db'])
+
+    def test_absent_sans_creer(self):
+        with self.assertRaises(FileNotFoundError):
+            self.espace('PC-FIXE').ouvrir()
+
+    def test_aller_retour_entre_deux_pc(self):
+        a = self.espace('PC-FIXE'); a.ouvrir(creer=True); self.modifier(a); a.publier(); a.fermer()
+        self.assertFalse(os.path.exists(a.travail))                     # copie locale effacée à la fermeture
+        b = self.espace('PC-PORTABLE')
+        self.assertIsNone(b.ouvrir()['ouvert_ailleurs'])                # PC-FIXE a bien refermé
+        self.modifier(b, 'Renommé sur le portable'); b.publier(); b.fermer()
+        a2 = self.espace('PC-FIXE'); a2.ouvrir()
+        self.assertEqual(self.noms(a2.travail), ['Renommé sur le portable'])
+        a2.fermer()
+        self.assertEqual(self.fichiers_sync(), ['elpro_logs.db'])
+
+    def test_ouvert_ailleurs_puis_rechargement(self):
+        a = self.espace('PC-FIXE'); a.ouvrir(creer=True); self.modifier(a); a.publier(); a.annoncer()
+        b = self.espace('PC-PORTABLE')
+        info = b.ouvrir()
+        self.assertEqual(info['ouvert_ailleurs']['poste'], 'PC-FIXE')
+        self.assertEqual(a.verifier(), 'a_jour')
+        self.modifier(b, 'Nouveau nom'); b.publier()
+        self.assertEqual(a.verifier(), 'modifie')
+        self.assertEqual(a.info_partage()['poste'], 'PC-PORTABLE')
+        a.recharger()
+        self.assertEqual(self.noms(a.travail), ['Nouveau nom'])
+        self.assertEqual(a.verifier(), 'a_jour')
+
+    def test_recharger_refuse_si_modifications_non_publiees(self):
+        a = self.espace('PC-FIXE'); a.ouvrir(creer=True)
+        a.en_attente = True
+        with self.assertRaises(RuntimeError):
+            a.recharger()
+
+    def test_conflit_rien_n_est_ecrase(self):
+        a = self.espace('PC-FIXE'); a.ouvrir(creer=True); self.modifier(a); a.publier()
+        b = self.espace('PC-PORTABLE'); b.ouvrir()
+        self.modifier(a, 'Version fixe'); a.publier()
+        self.modifier(b, 'Version portable')
+        with self.assertRaises(L.ConflitPublication) as c:
+            b.publier()
+        self.assertIn('PC-FIXE', str(c.exception))
+        self.assertTrue(b.en_attente)
+        self.assertEqual(self.noms(self.partage), ['Version fixe'])     # rien d'écrasé
+
+    def test_conflit_les_deux(self):
+        a = self.espace('PC-FIXE'); a.ouvrir(creer=True); self.modifier(a); a.publier()
+        b = self.espace('PC-PORTABLE'); b.ouvrir()
+        self.modifier(a, 'Version fixe'); a.publier()
+        self.modifier(b, 'Version portable')
+        self.assertRaises(L.ConflitPublication, b.publier)
+        copie = b.resoudre('les_deux')
+        self.assertIn('copie PC-PORTABLE', os.path.basename(copie))
+        self.assertEqual(self.noms(copie), ['Version portable'])
+        self.assertEqual(self.noms(b.travail), ['Version fixe'])
+        self.assertFalse(b.en_attente)
+        self.assertEqual(self.noms(self.partage), ['Version fixe'])
+
+    def test_conflit_mienne_et_autre(self):
+        a = self.espace('PC-FIXE'); a.ouvrir(creer=True); self.modifier(a); a.publier()
+        b = self.espace('PC-PORTABLE'); b.ouvrir()
+        self.modifier(a, 'Version fixe'); a.publier()
+        self.modifier(b, 'Version portable')
+        self.assertRaises(L.ConflitPublication, b.publier)
+        b.resoudre('mienne')
+        self.assertEqual(self.noms(self.partage), ['Version portable'])
+        self.assertEqual(a.verifier(), 'modifie')
+        self.modifier(a, 'Encore le fixe')
+        a.en_attente = True
+        self.assertRaises(L.ConflitPublication, a.publier)
+        a.resoudre('autre')
+        self.assertEqual(self.noms(a.travail), ['Version portable'])
+
+    def test_publication_impossible_puis_reprise_au_demarrage(self):
+        a = self.espace('PC-FIXE'); a.ouvrir(creer=True); self.modifier(a); a.publier()
+        self.modifier(a, 'Pas encore publié')
+        cache = self.sync + '_absent'
+        os.rename(self.sync, cache)                                     # kDrive pas monté, clé retirée…
+        with self.assertRaises(L.PublicationImpossible):
+            a.publier()
+        with self.assertRaises(L.PublicationImpossible):
+            a.fermer()
+        self.assertTrue(os.path.exists(a.travail))                      # copie locale gardée
+        os.rename(cache, self.sync)
+        a2 = self.espace('PC-FIXE')                                     # démarrage suivant
+        self.assertTrue(a2.a_reprendre())
+        self.assertTrue(a2.ouvrir()['repris'])
+        self.assertEqual(self.noms(self.partage), ['Pas encore publié'])
+
+    def test_reprise_en_conflit(self):
+        a = self.espace('PC-FIXE'); a.ouvrir(creer=True); self.modifier(a); a.publier()
+        b = self.espace('PC-PORTABLE'); b.ouvrir()
+        self.modifier(a, 'Fixe non publié'); a.en_attente = True; a._sauver_etat()   # plantage avant publication
+        self.modifier(b, 'Portable'); b.publier(); b.fermer()
+        a2 = self.espace('PC-FIXE')
+        with self.assertRaises(L.ConflitPublication):
+            a2.ouvrir()
+        self.assertTrue(os.path.exists(a2.travail))
+        a2.resoudre('les_deux')
+        self.assertEqual(self.noms(a2.travail), ['Portable'])
+
+    def test_fermeture_retire_ouvert(self):
+        a = self.espace('PC-FIXE'); a.ouvrir(creer=True); a.annoncer(); a.fermer()
+        b = self.espace('PC-PORTABLE')
+        self.assertIsNone(b.ouvrir()['ouvert_ailleurs'])
+
+    def test_copies_en_conflit_du_synchroniseur(self):
+        a = self.espace('PC-FIXE'); a.ouvrir(creer=True)
+        self.assertEqual(a.copies_en_conflit(), [])
+        for nom in ('elpro_logs-PC-FIXE.db', 'elpro_logs (conflit 2026-11-09).db',      # OneDrive, autres
+                    'elpro_logs (copie PC-FIXE 2026-11-09 08h12).db',                   # la nôtre : exclue
+                    'elpro_logs_sauvegarde_2026-11-09.db', 'autre.db', 'elpro_logs-PC-FIXE.txt'):
+            shutil.copyfile(self.partage, os.path.join(self.sync, nom))
+        self.assertEqual(sorted(os.path.basename(c) for c in a.copies_en_conflit()),
+                         ['elpro_logs (conflit 2026-11-09).db', 'elpro_logs-PC-FIXE.db'])
+
+    def test_date_touchee_sans_changement(self):
+        a = self.espace('PC-FIXE'); a.ouvrir(creer=True)
+        os.utime(self.partage, (1, 1))                                 # le synchroniseur retouche la date
+        self.assertEqual(a.verifier(), 'a_jour')
+        os.remove(self.partage)
+        self.assertEqual(a.verifier(), 'absent')
+
+    def test_migration_base_avec_wal(self):
+        """Base des versions précédentes ouverte directement dans OneDrive : -wal/-shm à côté du fichier."""
+        os.makedirs(self.sync)
+        m = L.Magasin(self.partage)
+        m.cx.execute('PRAGMA wal_autocheckpoint=0')
+        m.ajouter_config(self.projet)
+        copie = os.path.join(self.tmp, 'ancien'); os.makedirs(copie)
+        for suf in ('', '-wal', '-shm'):
+            shutil.copyfile(self.partage + suf, os.path.join(copie, 'elpro_logs.db' + suf))
+        m.fermer()
+        shutil.rmtree(self.sync); shutil.copytree(copie, self.sync)
+        self.assertIn('elpro_logs.db-wal', self.fichiers_sync())
+        a = self.espace('PC-FIXE'); a.ouvrir()
+        self.assertEqual(self.noms(a.travail), ['Demo Site B'])
+        self.assertEqual(self.fichiers_sync(), ['elpro_logs.db'])
+
+
+class TestV15MotDePasseParPoste(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.chemin = os.path.join(self.tmp, 't.db')
+        m = L.Magasin(self.chemin)
+        self.sid = m.ajouter_config(charger(PROJET_B))['systeme_id']
+        m.fermer()
+
+    def magasin(self, poste):
+        m = L.Magasin(self.chemin, creer=False, poste=poste)
+        self.addCleanup(m.fermer)
+        return m
+
+    def test_chaque_pc_garde_son_mot_de_passe(self):
+        fixe, port = self.magasin('PC-FIXE\\utilisateur'), self.magasin('PC-PORTABLE\\utilisateur')
+        fixe.definir_acces(self.sid, '192.0.2.1', 'user', b'B64:FIXE')
+        acc = port.acces(self.sid)
+        self.assertEqual(acc['adresse'], '192.0.2.1')                    # adresse et utilisateur communs
+        self.assertFalse(acc['mdp_ce_poste'])
+        port.definir_acces(self.sid, '192.0.2.1', 'user', b'B64:PORT')
+        self.assertEqual(fixe.acces(self.sid)['mdp'], b'B64:FIXE')       # le portable n'a rien écrasé
+        self.assertEqual(port.acces(self.sid)['mdp'], b'B64:PORT')
+        fixe.definir_acces(self.sid, '192.0.2.2', 'user')                 # None : mot de passe inchangé
+        self.assertEqual(fixe.acces(self.sid)['mdp'], b'B64:FIXE')
+        self.assertEqual(port.acces(self.sid)['adresse'], '192.0.2.2')
+
+    def test_ancien_mot_de_passe_commun(self):
+        m = self.magasin('PC-FIXE\\utilisateur')
+        m.cx.execute("INSERT INTO acces VALUES (?, '192.0.2.1', 'user', ?, NULL, NULL)", (self.sid, b'DPAPI:ancien'))
+        m.cx.commit()
+        acc = m.acces(self.sid)
+        self.assertEqual(acc['mdp'], b'DPAPI:ancien')                    # essayé tel quel (lisible sur le PC d'origine)
+        self.assertFalse(acc['mdp_ce_poste'])
+
+    def test_suppression_systeme(self):
+        m = self.magasin('PC-FIXE\\utilisateur')
+        m.definir_acces(self.sid, '192.0.2.1', 'user', b'B64:x')
+        m.supprimer_systeme(self.sid)
+        self.assertEqual(m.cx.execute('SELECT COUNT(*) FROM mdp_postes').fetchone()[0], 0)

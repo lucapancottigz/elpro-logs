@@ -191,13 +191,19 @@ class ConnexionCentrale(QDialog):
         f.addRow('Utilisateur :', self.utilisateur)
         self.mdp = QLineEdit()
         self.mdp.setEchoMode(QLineEdit.Password)
-        if self.acces and self.acces['mdp']:
+        if self.acces and self.acces['mdp_ce_poste']:
             self.mdp.setPlaceholderText('(inchangé)')
+        elif self.acces and self.acces['mdp']:     # ancien mot de passe commun (v1.4 et avant)
+            self.mdp.setPlaceholderText('(enregistré sur un autre PC — saisir ici si nécessaire)')
         f.addRow('Mot de passe :', self.mdp)
         lay.addLayout(f)
-        note = QLabel('Activez d\'abord le tunnel WireGuard.')
-        note.setStyleSheet('color: gray;')
-        lay.addWidget(note)
+        for texte in ('Activez d\'abord le tunnel WireGuard.',
+                      'Le mot de passe est gardé pour ce PC seulement, chiffré par Windows : saisissez-le une fois '
+                      'sur chaque PC.'):
+            note = QLabel(texte)
+            note.setWordWrap(True)
+            note.setStyleSheet('color: gray;')
+            lay.addWidget(note)
         t = QHBoxLayout()
         self.bouton_tester = QPushButton('Tester la connexion')
         self.bouton_tester.clicked.connect(self.tester)
@@ -245,10 +251,8 @@ class ConnexionCentrale(QDialog):
         if not self.adresse.text().strip():
             QMessageBox.warning(self, 'Connexion à la centrale', 'Saisissez l\'adresse de la centrale.')
             return
-        if self.mdp.text():
-            protege = R.proteger_mdp(self.mdp.text())
-        else:                                       # champ vide : garder le mot de passe enregistré tel quel
-            protege = self.acces['mdp'] if self.acces else R.proteger_mdp('')
+        # champ vide : mot de passe de ce PC inchangé (v1.5 : un mot de passe par PC)
+        protege = R.proteger_mdp(self.mdp.text()) if self.mdp.text() else None
         self.m.definir_acces(self.sid, self.adresse.text(), self.utilisateur.text() or R.UTILISATEUR_DEFAUT, protege)
         self.accept()
 
@@ -274,9 +278,14 @@ class EmplacementDonnees(QDialog):
         ligne.addWidget(self.chemin, 1)
         dossier = QPushButton('Ouvrir le dossier')
         dossier.clicked.connect(lambda: QDesktopServices.openUrl(
-            QUrl.fromLocalFile(os.path.dirname(os.path.abspath(self.fenetre.chemin_base)))))
+            QUrl.fromLocalFile(os.path.dirname(os.path.abspath(self.fenetre.chemin_partage)))))
         ligne.addWidget(dossier)
         f.addRow('Emplacement actuel :', ligne)
+        copie = QLabel('ELPRO Logs travaille sur une copie locale et enregistre ce fichier après chaque modification. '
+                       'Un dossier synchronisé (OneDrive, kDrive…) peut donc être utilisé sur plusieurs PC.')
+        copie.setWordWrap(True)
+        copie.setStyleSheet('color: gray;')
+        f.addRow('', copie)
         self.taille = QLabel()
         f.addRow('Taille :', self.taille)
         lay.addLayout(f)
@@ -298,7 +307,7 @@ class EmplacementDonnees(QDialog):
 
     def actualiser(self):
         fe = self.fenetre
-        self.chemin.setText(os.path.abspath(fe.chemin_base))
+        self.chemin.setText(os.path.abspath(fe.chemin_partage))
         try:
             mo = fe.magasin.taille_fichier() / 1e6
         except OSError:
@@ -310,20 +319,20 @@ class EmplacementDonnees(QDialog):
 
     def deplacer(self):
         d = QFileDialog.getExistingDirectory(self, 'Déplacer la base vers…',
-                                             os.path.dirname(os.path.abspath(self.fenetre.chemin_base)))
+                                             os.path.dirname(os.path.abspath(self.fenetre.chemin_partage)))
         if d:
             self.fenetre.deplacer_base(d)
 
     def ouvrir(self):
         c, _ = QFileDialog.getOpenFileName(self, 'Ouvrir une base existante',
-                                           os.path.dirname(os.path.abspath(self.fenetre.chemin_base)), FILTRE_BASE)
+                                           os.path.dirname(os.path.abspath(self.fenetre.chemin_partage)), FILTRE_BASE)
         if c:
             self.fenetre.ouvrir_base_existante(c)
 
     def sauvegarder(self):
         nom = f'elpro_logs_sauvegarde_{datetime.date.today():%Y-%m-%d}.db'
         c, _ = QFileDialog.getSaveFileName(self, 'Faire une copie de sauvegarde',
-                                           os.path.join(os.path.dirname(os.path.abspath(self.fenetre.chemin_base)), nom),
+                                           os.path.join(os.path.dirname(os.path.abspath(self.fenetre.chemin_partage)), nom),
                                            FILTRE_BASE)
         if c:
             self.fenetre.sauvegarder_base(c)

@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.join(RACINE, 'tools'))
 
 from PySide6.QtCore import QSettings, QCoreApplication, Qt  # noqa: E402
 from PySide6.QtWidgets import (QApplication, QMessageBox, QFileDialog, QInputDialog, QToolTip,  # noqa: E402
-                               QAbstractButton, QToolBar)
+                               QAbstractButton, QToolBar, QLabel)
 from PySide6.QtGui import QColor  # noqa: E402
 
 import elpro_logs as L  # noqa: E402
@@ -29,6 +29,8 @@ import elpro_remote as R  # noqa: E402
 sys.path.insert(0, os.path.join(RACINE, 'tests'))
 from test_remote import FausseCentrale  # noqa: E402
 from version import APP_VERSION  # noqa: E402
+import updater as U  # noqa: E402
+from ui import mise_a_jour as MJ  # noqa: E402
 
 sys.stdout.reconfigure(encoding='utf-8')
 MESSAGES = []
@@ -109,16 +111,38 @@ def segments_non_ok(frise, nom):
 
 
 TMP = tempfile.mkdtemp()
+os.environ['LOCALAPPDATA'] = os.path.join(TMP, 'LocalAppData')    # copies de travail (v1.5) dans le dossier de test
 EX = os.path.join(RACINE, 'examples')
 LOGS = sorted(glob.glob(os.path.join(EX, 'logs', '*.log')))
+# v1.5 : fenêtres « Base ouverte sur un autre PC », « Base modifiée sur un autre PC », « Réessayer »
+REPONSES.update(ailleurs=True, conflit='les_deux', reessayer=False)
+MW.avertir_ouvert_ailleurs = lambda parent, ailleurs, abandon: (
+    MESSAGES.append(('ailleurs', abandon, ailleurs['poste'])) or REPONSES['ailleurs'])
+MW.choisir_conflit = lambda parent, exc: MESSAGES.append(('conflit', '', str(exc))) or REPONSES['conflit']
+MW.choisir_reessayer = lambda parent, titre, texte, abandon: (
+    MESSAGES.append(('reessayer', titre, texte)) or REPONSES['reessayer'])
 
 
 def fenetre(nom_base):
-    chemin = os.path.join(TMP, nom_base)
-    f = MainWindow(RACINE, L.Magasin(chemin))
+    """Base dans un dossier « OneDrive » de test, ouverte comme au démarrage (copie de travail locale)."""
+    e = L.Espace(os.path.join(TMP, 'OneDrive', nom_base))
+    e.ouvrir(creer=True)
+    e.annoncer()
+    f = MainWindow(RACINE, e, L.Magasin(e.travail, creer=False))
     f.show()
     QApplication.processEvents()
     return f
+
+
+def noms_partage(chemin):
+    """Noms des systèmes du fichier partagé, lus comme le ferait un troisième PC."""
+    e = L.Espace(chemin, dossier_travail=os.path.join(TMP, 'travail lecteur'), poste='LECTEUR\\x')
+    e.ouvrir()
+    m = L.Magasin(e.travail, creer=False)
+    noms = [s['nom'] for s in m.systemes()]
+    m.fermer()
+    e.liberer_local()
+    return noms
 
 
 def global_pret(tab):
@@ -655,12 +679,12 @@ def main():
              'pendant un import ou une récupération : Tout récupérer et Emplacement des données grisés')
     f._occuper(False)
     de.actualiser()
-    nb, actif, ancien = len(f.magasin.systemes()), f.onglet_actif().sid, f.chemin_base
+    nb, actif, ancien = len(f.magasin.systemes()), f.onglet_actif().sid, f.chemin_partage
     verifier(all(b.isEnabled() for b in de.boutons) and de.chemin.text() == os.path.abspath(ancien)
              and de.taille.text().endswith(f'{nb} systèmes'), f'dialogue : emplacement, taille ({de.taille.text()})')
     dossier = os.path.join(TMP, 'Données déplacées')
     deplacee = os.path.join(dossier, L.NOM_BASE)
-    verifier(f.deplacer_base(dossier) and MW.meme_fichier(f.chemin_base, deplacee) and f.onglets.count() == nb
+    verifier(f.deplacer_base(dossier) and MW.meme_fichier(f.chemin_partage, deplacee) and f.onglets.count() == nb
              and f.onglet_actif().sid == actif and not os.path.exists(ancien),
              'E2 base déplacée, onglets rechargés (même onglet actif), ancien fichier supprimé')
     verifier(QSettings().value(MW.CLE_BASE) == os.path.abspath(deplacee), 'E2 emplacement mémorisé')
@@ -671,15 +695,14 @@ def main():
              and os.path.getsize(deplacee) == taille, 'déplacer vers un dossier qui a déjà une base : jamais d\'écrasement')
     REPONSES['question'] = QMessageBox.Yes
     f.close()
-    m = MW.ouvrir_base_demarrage()
-    f = MainWindow(RACINE, m)
-    verifier(MW.meme_fichier(f.chemin_base, deplacee) and f.onglets.count() == nb
+    f = MainWindow(RACINE, *MW.ouvrir_base_demarrage())
+    verifier(MW.meme_fichier(f.chemin_partage, deplacee) and f.onglets.count() == nb
              and f.magasin.acces(1)['adresse'] == adresse, 'E3 relance : base du nouvel emplacement, systèmes et connexion')
     sauv = os.path.join(TMP, 'sauvegarde.db')
     verifier(f.sauvegarder_base(sauv) and L.verifier_base(sauv)['nb_systemes'] == nb
              and MESSAGES[-1][2].startswith('Copie enregistrée'), 'E5 copie de sauvegarde, application ouverte')
     verifier(not f.sauvegarder_base(sauv) and 'existe déjà' in MESSAGES[-1][2], 'copie de sauvegarde : jamais d\'écrasement')
-    verifier(f.ouvrir_base_existante(sauv) and MW.meme_fichier(f.chemin_base, sauv) and f.onglets.count() == nb,
+    verifier(f.ouvrir_base_existante(sauv) and MW.meme_fichier(f.chemin_partage, sauv) and f.onglets.count() == nb,
              'E5 ouvrir la copie : mêmes systèmes')
     f.ouvrir_base_existante(deplacee)
     f.close()
@@ -695,10 +718,11 @@ def main():
         os.rename(absent, dossier)
         return 'reessayer'
     MW.choisir_base = rebrancher
-    m = MW.ouvrir_base_demarrage()
-    verifier(m is not None and MW.meme_fichier(m.chemin, deplacee) and len(m.systemes()) == nb,
+    e, m = MW.ouvrir_base_demarrage()
+    verifier(MW.meme_fichier(e.partage, deplacee) and len(m.systemes()) == nb,
              'E4 disque rebranché puis Réessayer : tout revient')
     m.fermer()
+    e.fermer()
     abimee = os.path.join(TMP, 'abimee.db')
     open(abimee, 'wb').write(b'pas une base' * 100)
     QSettings().setValue(MW.CLE_BASE, abimee)
@@ -708,7 +732,7 @@ def main():
              and not appels[0][1], 'base endommagée au démarrage : message du moteur, sans « Réessayer »')
     MW.choisir_base = choisir
     QSettings().setValue(MW.CLE_BASE, deplacee)
-    f = MainWindow(RACINE, MW.ouvrir_base_demarrage())
+    f = MainWindow(RACINE, *MW.ouvrir_base_demarrage())
 
     print('== Aide et À propos')
     a = dialogs.AideListeLog(f)
@@ -716,6 +740,254 @@ def main():
     ap = dialogs.AboutDialog(f, RACINE)
     verifier(ap.texte_fichier('Licence').startswith('ELPRO Logs') and ap.texte_fichier('Composants tiers'),
              f'À propos {APP_VERSION} : licence et composants tiers')
+
+    print('== Mise à jour automatique (v1.5, sans réseau)')
+    os.environ.pop(U.VARIABLE_TEST, None)
+    textes_aide = [a.text() for a in f.menuBar().actions()[-1].menu().actions()]
+    verifier(textes_aide[-2:] == ['Rechercher les mises à jour…', 'À propos'],
+             f'action « Rechercher les mises à jour… » juste avant « À propos » : {textes_aide}')
+    info = {'version': '9.9.9', 'notes': 'Notes de **test** de la 9.9.9', 'page': 'https://example.invalid/v9.9.9',
+            'installateur': {'nom': 'ELPRO_Logs_Setup_9.9.9.exe', 'url': '', 'taille': 0}, 'empreintes': ''}
+    appels, maj = [], {'chercher': None, 'telecharger': None}
+
+    def chercher(depot, version, prefixe):
+        appels.append(('chercher', depot, version, prefixe))
+        if isinstance(maj['chercher'], Exception):
+            raise maj['chercher']
+        return maj['chercher']
+    U.chercher = chercher
+    fenetres = []
+    MJ.FenetreMaj.exec = lambda self: fenetres.append(self) or 0
+
+    def recherche_manuelle(resultat):
+        maj['chercher'] = resultat
+        MESSAGES.clear()
+        fenetres.clear()
+        f.action_maj.trigger()
+        en_cours = not f.action_maj.isEnabled()
+        attendre(lambda: f.action_maj.isEnabled())
+        return en_cours and QApplication.overrideCursor() is None
+    verifier(recherche_manuelle(None) and MESSAGES == [('information', 'Mise à jour',
+                                                         f'ELPRO Logs est à jour (version {APP_VERSION}).')]
+             and appels == [('chercher', U.DEPOT_LOGS, APP_VERSION, U.PREFIXE_LOGS)],
+             'M1 recherche manuelle, à jour : « ELPRO Logs est à jour (version …) », action grisée pendant la recherche')
+    erreur = 'Pas de connexion au serveur de mise à jour (GitHub). Vérifiez la connexion Internet.'
+    recherche_manuelle(U.ErreurMiseAJour(erreur))
+    verifier(MESSAGES == [('warning', 'Mise à jour', erreur)], 'M2 recherche manuelle, erreur : avertissement')
+    recherche_manuelle(info)
+    fw = fenetres[0] if fenetres else None
+    verifier(fw is not None and fw.windowTitle() == 'Mise à jour disponible'
+             and fw.entete.text() == f'ELPRO Logs 9.9.9 est disponible. Version installée : {APP_VERSION}.'
+             and 'Notes de test de la 9.9.9' in fw.notes.toPlainText() and fw.bouton_installer.isDefault()
+             and [fw.bouton_installer.text(), fw.bouton_plus_tard.text(), fw.bouton_ignorer.text()]
+             == ['Installer et redémarrer', 'Plus tard', 'Ignorer cette version'],
+             'M3 « Mise à jour disponible » : version, notes, trois boutons')
+    fw.ignorer()
+    verifier(QSettings().value('maj/version_ignoree') == '9.9.9', 'M4 « Ignorer cette version » mémorisé')
+    QSettings().remove('maj/derniere_verification')
+    appels.clear()
+    fenetres.clear()
+    f.verifier_maj_auto()
+    attendre(lambda: QSettings().value('maj/derniere_verification'))
+    verifier(len(appels) == 1 and not fenetres and not U.verification_due(QSettings().value('maj/derniere_verification')),
+             'M4 vérification automatique : version ignorée non proposée, date mémorisée')
+    recherche_manuelle(info)
+    verifier(len(fenetres) == 1, 'M4 recherche manuelle : la version ignorée est proposée')
+    appels.clear()
+    f.verifier_maj_auto()
+    QApplication.processEvents()
+    verifier(appels == [], 'M5 vérification automatique faite il y a moins de 24 h : GitHub non interrogé')
+    QSettings().remove('maj/version_ignoree')
+    QSettings().remove('maj/derniere_verification')
+    maj['chercher'] = U.ErreurMiseAJour(erreur)
+    MESSAGES.clear()
+    f.verifier_maj_auto()
+    attendre(lambda: appels and f._recherche_maj.isFinished())
+    QApplication.processEvents()
+    verifier(not MESSAGES and not QSettings().value('maj/derniere_verification'),
+             'M6 vérification automatique en erreur : rien affiché, rien mémorisé')
+
+    installateur = os.path.join(TMP, 'ELPRO_Logs_Setup_9.9.9.exe')
+    open(installateur, 'wb').close()
+
+    def telecharger(info_, progression=None, annule=None):
+        progression(1_500_000, 3_000_000)
+        if isinstance(maj['telecharger'], Exception):
+            raise maj['telecharger']
+        return installateur
+    U.telecharger = telecharger
+    installes = []
+    f.installer_maj = lambda chemin: installes.append(chemin)
+    MESSAGES.clear()
+    maj['telecharger'] = U.ErreurMiseAJour('Téléchargement annulé.')
+    MJ.FenetreMaj(f, info).installer()
+    verifier(not MESSAGES and not installes, 'M7 téléchargement annulé : aucun message')
+    maj['telecharger'] = U.ErreurMiseAJour('Le fichier téléchargé ne correspond pas à l\'empreinte publiée.')
+    MJ.FenetreMaj(f, info).installer()
+    verifier(MESSAGES == [('warning', 'Mise à jour', 'Le fichier téléchargé ne correspond pas à l\'empreinte publiée.')]
+             and not installes, 'M7 empreinte fausse : avertissement, rien installé')
+    maj['telecharger'] = None
+    MJ.FenetreMaj(f, info).installer()
+    verifier(installes == [installateur], 'M7 téléchargement vérifié : installer_maj(chemin)')
+    del f.installer_maj
+    ordre = []
+    fermer = f.espace.fermer
+    f.espace.fermer = lambda: ordre.append('fermer') or fermer()
+    U.lancer_installation = lambda chemin: ordre.append(('lancer', chemin))
+    f.installer_maj(installateur)
+    verifier(ordre == ['fermer', ('lancer', installateur)] and not f.isVisible(),
+             'M8 installer_maj : lancer_installation une fois, après espace.fermer()')
+    f = MainWindow(RACINE, *MW.ouvrir_base_demarrage())
+    f.show()
+
+    def lancement_impossible(chemin):
+        raise U.ErreurMiseAJour(f'Installateur introuvable : {chemin}')
+    U.lancer_installation = lancement_impossible
+    MESSAGES.clear()
+    f.installer_maj(installateur)
+    verifier(MESSAGES == [('warning', 'Mise à jour', f'Installateur introuvable : {installateur}\n\n'
+                           'ELPRO Logs va se fermer : relancez-le pour continuer.')] and not f.isVisible()
+             and not os.listdir(L.dossier_travail_defaut()),
+             'M9 lancement impossible : avertissement, fermeture normale (base publiée)')
+    import app
+    verif = os.path.join(TMP, 'verif')
+    app.verifier(verif)
+    with open(os.path.join(verif, 'verification.txt'), encoding='utf-8') as fv_:
+        lv = fv_.read().splitlines()
+    verifier(len(lv) > 2 and lv[2] == 'OK module de mise à jour et certificats HTTPS',
+             'M10 --verifier : « OK module de mise à jour et certificats HTTPS » en premier contrôle')
+
+    print('== Base dans un dossier synchronisé, utilisée sur plusieurs PC (v1.5)')
+    travail = L.dossier_travail_defaut()
+    od = os.path.join(TMP, 'OneDrive PC')
+    os.makedirs(od)
+    partage = os.path.join(od, L.NOM_BASE)
+    shutil.copyfile(deplacee, partage)
+    QSettings().setValue(MW.CLE_BASE, partage)
+    f = MainWindow(RACINE, *MW.ouvrir_base_demarrage())
+    f.show()
+    QApplication.processEvents()
+    nb = len(f.magasin.systemes())
+    f.ajouter_systeme(chemin_ana)
+    sid = f.onglet_actif().sid
+    n_fichiers = len(f.magasin.fichiers(sid))
+    f.importer_logs([csv_ana])
+    verifier(len(f.magasin.fichiers(sid)) == n_fichiers + 1 and sorted(os.listdir(od)) == [L.NOM_BASE]
+             and len(noms_partage(partage)) == nb + 1,
+             f'S1 ajout et import : le dossier partagé ne contient que {L.NOM_BASE} (ni -wal, ni -shm, ni .tmp)')
+    verifier(f.enregistre.text().startswith('Enregistré à ') and len(f.enregistre.text()) == len('Enregistré à hh:mm')
+             and f.enregistre.toolTip().startswith(partage), f'S1 indicateur « {f.enregistre.text()} »')
+    de = dialogs.EmplacementDonnees(f)
+    verifier(de.chemin.text() == partage and not MW.meme_fichier(f.chemin_base, partage)
+             and any('copie locale' in x.text() for x in de.findChildren(QLabel)),
+             'S1 Emplacement des données : fichier partagé affiché, copie de travail locale expliquée')
+    # l'autre PC : même fichier, sa propre copie de travail
+    autre = L.Espace(partage, dossier_travail=os.path.join(TMP, 'travail AUTRE'), poste='AUTRE-PC\\x')
+
+    def modifier_ailleurs(nom):
+        autre.ouvrir()
+        ma = L.Magasin(autre.travail, creer=False, poste='AUTRE-PC\\x')
+        ma.renommer(sid, nom)
+        ma.fermer()
+        autre.publier()
+    modifier_ailleurs('Renommé sur AUTRE-PC')
+    f._surveiller()
+    verifier(f.onglet_de(sid).nom == 'Renommé sur AUTRE-PC'
+             and f.onglets.tabText(f.onglets.indexOf(f.onglet_de(sid))) == 'Renommé sur AUTRE-PC'
+             and f.statusBar().currentMessage().startswith('Base mise à jour : modifications de AUTRE-PC ('),
+             f'S2 publication de l\'autre PC reprise : {f.statusBar().currentMessage()}')
+    # l'autre PC publie, puis ce PC renomme sans surveillance entre les deux
+    f.synchroniser = lambda: True
+    modifier_ailleurs('Autre nom 2')
+    MESSAGES.clear()
+    f.renommer()
+    copies = [c for c in os.listdir(od) if '(copie ' in c]
+    verifier(any(m[0] == 'conflit' and 'enregistrée sur AUTRE-PC' in m[2] for m in MESSAGES) and len(copies) == 1
+             and f.onglet_de(sid).nom == 'Autre nom 2' and any('enregistrées à part' in m[2] for m in MESSAGES)
+             and 'Site B renommé' in noms_partage(os.path.join(od, copies[0])),
+             f'S3 conflit « Garder les deux » : copie {copies}, base affichée = celle de l\'autre PC')
+    modifier_ailleurs('Autre nom 3')
+    REPONSES['conflit'] = 'mienne'
+    MESSAGES.clear()
+    f.renommer()
+    REPONSES['conflit'] = 'les_deux'
+    del f.synchroniser
+    verifier(any(m[0] == 'question' and 'sera remplacée par celle de ce PC' in m[2] for m in MESSAGES)
+             and 'Site B renommé' in noms_partage(partage) and 'Autre nom 3' not in noms_partage(partage),
+             'S3 « Garder celle de ce PC » (Oui) : le fichier partagé a le nom de ce PC')
+    # mot de passe des centrales par PC (v1.5)
+    f.magasin.cx.execute('UPDATE acces SET mdp=? WHERE systeme_id=1', (R.proteger_mdp('ancien'),))  # base v1.4
+    f.magasin.cx.commit()
+    ma = L.Magasin(f.chemin_base, creer=False, poste='AUTRE-PC\\x')
+    d = dialogs.ConnexionCentrale(f, ma, 1, 'B')
+    verifier(d.mdp.placeholderText() == '(enregistré sur un autre PC — saisir ici si nécessaire)'
+             and any('pour ce PC seulement' in x.text() for x in d.findChildren(QLabel)),
+             'S9 connexion vue d\'un autre PC : « enregistré sur un autre PC », note grise')
+    CONNEXIONS.append((adresse, 'user', 'mdp-autre'))
+    d.exec()
+    CONNEXIONS.append((adresse, 'user', ''))
+    d = dialogs.ConnexionCentrale(f, f.magasin, 1, 'B')
+    verifier(d.mdp.placeholderText() == '(inchangé)', 'S9 connexion vue de ce PC : « (inchangé) »')
+    d.exec()
+    verifier(R.retrouver_mdp(ma.acces(1)['mdp']) == 'mdp-autre' and ma.acces(1)['mdp_ce_poste']
+             and R.retrouver_mdp(f.magasin.acces(1)['mdp']) == 'secret',
+             'S9 saisie sur l\'autre PC : le mot de passe de ce PC reste inchangé (champ vide = inchangé)')
+    ma.fermer()
+    # copie en conflit créée par le synchroniseur
+    shutil.copyfile(partage, os.path.join(od, 'elpro_logs-AUTRE-PC.db'))
+    MESSAGES.clear()
+    f._surveiller()
+    f._surveiller()
+    verifier([m[1] for m in MESSAGES if m[0] == 'box'] == ['Copie en conflit']
+             and 'elpro_logs-AUTRE-PC.db' in MESSAGES[0][2], 'S8 « Copie en conflit » signalée une seule fois')
+    f.close()
+    verifier(os.listdir(travail) == [], 'S1 fermeture : dossier de travail local vide')
+    # ouverture pendant que l'autre PC a la base ouverte
+    autre.ouvrir()
+    autre.annoncer()
+    REPONSES['ailleurs'] = False
+    MESSAGES.clear()
+    verifier(MW.ouvrir_base_demarrage() is None and ('ailleurs', 'Quitter', 'AUTRE-PC') in MESSAGES
+             and autre.verifier() == 'a_jour' and os.listdir(travail) == [],
+             'S4 base ouverte sur AUTRE-PC : avertissement ; Quitter → rien de publié')
+    REPONSES['ailleurs'] = True
+    autre.fermer()
+    # dossier partagé absent pendant l'utilisation
+    f = MainWindow(RACINE, *MW.ouvrir_base_demarrage())
+    f.show()
+    QApplication.processEvents()
+    f.onglets.setCurrentWidget(f.onglet_de(1))
+    n_fichiers = len(f.magasin.fichiers(1))
+    hors_ligne = od + ' (hors ligne)'
+    os.rename(od, hors_ligne)
+    f.importer_logs(G.generer(os.path.join(EX, 'demo_site_B.json'), os.path.join(TMP, 'logs_v15'), 1,
+                              debut='2026-10-20 00:00:00'))
+    verifier(len(f.magasin.fichiers(1)) == n_fichiers + 1
+             and f.enregistre.text() == 'Pas encore enregistré dans le fichier partagé'
+             and 'introuvable' in f.enregistre.toolTip(), f'S5 dossier absent : indicateur orange ({f.enregistre.toolTip()})')
+    MESSAGES.clear()
+    f.close()
+    verifier(MESSAGES and MESSAGES[-1][:2] == ('reessayer', 'Fermeture') and os.listdir(travail),
+             'S5 fermeture : « Fermer quand même », copie locale gardée')
+    os.rename(hors_ligne, od)
+    f = MainWindow(RACINE, *MW.ouvrir_base_demarrage())
+    f.show()
+    QApplication.processEvents()
+    verifier(f.statusBar().currentMessage() == 'Modifications de la dernière session enregistrées dans le fichier partagé.'
+             and len(f.magasin.fichiers(1)) == n_fichiers + 1, 'S5 dossier revenu : modifications reprises, import présent')
+    f.close()
+    # base d'une version précédente avec son journal -wal à côté
+    ancienne = os.path.join(TMP, 'Ancienne', L.NOM_BASE)
+    m = L.Magasin(os.path.join(TMP, 'wal', L.NOM_BASE))
+    m.ajouter_config(json.load(open(os.path.join(EX, 'demo_site_B.json'), encoding='utf-8')))
+    os.makedirs(os.path.dirname(ancienne))
+    for suf in ('', '-wal'):
+        shutil.copyfile(m.chemin + suf, ancienne + suf)
+    m.fermer()
+    QSettings().setValue(MW.CLE_BASE, ancienne)
+    f = MainWindow(RACINE, *MW.ouvrir_base_demarrage())
+    verifier(f.onglets.count() == 1 and not os.path.exists(ancienne + '-wal'),
+             'S7 ancienne base avec -wal : ouverte sans perte, plus de -wal')
     f.close()
     attendre_tous()
     QSettings().clear()
