@@ -68,7 +68,10 @@ elpro_logs/
 ```python
 import elpro_logs as L
 
-m = L.Magasin(L.chemin_base_defaut())        # Documents\ELPRO Logs\elpro_logs.db (créé si absent)
+e = L.Espace(chemin)                          # v1.5 : fichier partagé (choisi) + copie de travail locale
+info = e.ouvrir(creer=False)                  # {'cree', 'repris', 'ouvert_ailleurs': None | {poste, depuis}}
+e.annoncer()                                  # publie « ouvert sur ce PC »
+m = L.Magasin(e.travail, creer=False)         # TOUTES les connexions SQLite sur e.travail, jamais sur le partagé
 
 # --- systèmes
 m.systemes()                     # [{id, cle, nom, serie, periode:(t0,t1)|None, nb_fichiers}] dans l'ordre
@@ -90,11 +93,22 @@ m.importer_fichier(sid, chemin, forcer_serie=False, progression=callback(n, tota
 with m.lot():                    # imports groupés (v1.2) : chaque bloc réécrit une fois, une seule transaction
     for chemin in chemins: m.importer_fichier(sid, chemin)    # chaque fichier en tout ou rien (v1.3)
 
+# --- fichier partagé et copie de travail (v1.5)
+e.partage / e.travail                # fichier choisi (affiché) / copie locale (%LOCALAPPDATA%\ELPRO Logs\travail)
+e.publier()                          # après CHAQUE modification ; lève L.ConflitPublication, L.PublicationImpossible
+e.verifier()                         # 'a_jour' | 'modifie' (un autre PC a publié) | 'absent'
+e.recharger()                        # reprend le fichier partagé (Magasin fermés, rien en attente)
+e.resoudre(choix)                    # après un conflit : 'les_deux' | 'mienne' | 'autre'
+e.fermer(); e.liberer_local()        # fermeture (publie, efface la copie) ; ouverture abandonnée
+e.copies_en_conflit(); e.en_attente; e.derniere_publication
+L.poste_courant(); L.nom_poste(poste)          # « PC\compte » ; nom du PC seul
+
 # --- emplacement de la base (v1.3)
 L.Magasin(chemin, creer=False)       # FileNotFoundError si la base n'existe pas
 L.verifier_base(chemin)              # {'ok', 'message', 'nb_systemes', 'format'}
+L.verifier_partage(chemin)           # idem sur une copie locale : pour tout fichier choisi par l'utilisateur (v1.5)
 L.copier_base(source, destination)   # copie cohérente + vérification ; refuse d'écraser
-L.avertissement_emplacement(chemin)  # texte si dossier réseau ou synchronisé (OneDrive…), sinon None
+L.avertissement_emplacement(chemin)  # texte si dossier réseau (plus lent), sinon None ; synchronisé : rien (v1.5)
 L.NOM_BASE                           # 'elpro_logs.db'
 m.fichiers(sid)
 
@@ -128,17 +142,26 @@ Un **canal** est un `dict` : `registre`, `nom`, `libelle`, `genre`, `famille`, `
 
 ## Threads
 
-- Tous les `QThread` (import, récupération, calculs, export) ouvrent leur instance avec **`m.chemin`** de la base en cours (`MainWindow.chemin_base`), avec `creer=False`, jamais avec `chemin_base_defaut()` (v1.3).
+- Tous les `QThread` (import, récupération, calculs, export) ouvrent leur instance avec **`m.chemin`** de la base en cours (`MainWindow.chemin_base`, la copie de travail), avec `creer=False`, jamais avec `chemin_base_defaut()` (v1.3) ni avec le fichier partagé (`MainWindow.chemin_partage`, v1.5).
 - **Import** : dans un `QThread`, avec **sa propre instance** `L.Magasin(chemin)` (une connexion SQLite ne se partage pas entre threads), tous les fichiers dans un seul `with m.lot():` (v1.2). Progression par signal. Annuler = sortir de la boucle (ce qui est importé est gardé). Fermer l'instance à la fin, puis rafraîchir l'onglet.
 - **Calculs** `etat_stations`, `synthese`, `evenements` : rapides sur un mois (< 0,5 s) mais quelques secondes sur une année. Les lancer dans un `QThread` (instance `Magasin` dédiée) avec un indicateur « Calcul en cours… » ; garder en cache le dernier résultat par (système, t0, t1).
 - Courbes du Détail : `m.courbe()` est rapide (< 0,1 s par canal sur un an) ; appel direct possible.
 
 ## Démarrage
 
-1. Ouvrir la base (`ouvrir_base_demarrage()` dans `ui/main_window.py`, v1.3) : clé `QSettings` `base/chemin` présente → `L.Magasin(chemin, creer=False)` ; absente → `L.Magasin(L.chemin_base_defaut())` (créée au besoin). **Une base introuvable n'est jamais recréée vide** : fenêtre « La base de données est introuvable… » avec **Réessayer**, **Ouvrir une autre base…**, **Utiliser l'emplacement par défaut** (confirmation : « Vos systèmes et données enregistrés à l'ancien emplacement n'y seront pas. ») et **Quitter**. Base d'une version plus récente ou endommagée : même fenêtre avec le message de `L.verifier_base()`, sans Réessayer.
+1. Ouvrir la base (`ouvrir_base_demarrage()` dans `ui/main_window.py`, v1.3 ; renvoie `(espace, magasin)` depuis la v1.5) : `L.Espace(chemin)` puis `e.ouvrir(creer=…)`, chemin = clé `QSettings` `base/chemin`, sinon `L.chemin_base_defaut()` (seul emplacement créé au besoin). Session précédente non publiée : reprise (« Modifications de la dernière session enregistrées dans le fichier partagé. »), fenêtre de conflit si un autre PC a publié depuis, « Réessayer / Quitter » si le fichier partagé reste inaccessible. Base ouverte sur un autre PC : avertissement « Continuer / Quitter ». Puis `e.annoncer()` et `L.Magasin(e.travail, creer=False)`. **Une base introuvable n'est jamais recréée vide** : fenêtre « La base de données est introuvable… » avec **Réessayer**, **Ouvrir une autre base…**, **Utiliser l'emplacement par défaut** (confirmation : « Vos systèmes et données enregistrés à l'ancien emplacement n'y seront pas. ») et **Quitter**. Base d'une version plus récente ou endommagée : même fenêtre avec le message de `L.verifier_base()`, sans Réessayer.
 2. Créer un onglet par système de `m.systemes()`, dans cet ordre ; sélectionner le dernier onglet actif (`QSettings`).
 3. Période initiale de chaque onglet (v1.1) : `m.periode_par_defaut(sid)`, la **dernière semaine de données**, du même jour de la semaine à la même heure (ex. lundi 19.10 09:17 → lundi 12.10 09:17), en heure suisse, changement d'heure compris. Moins d'une semaine de données : toute la période. Aucune donnée : pas de période.
 4. Après un import ou une récupération : si la période affichée est la période par défaut (bouton **7 jours**) ou **Tout**, elle est recalculée pour suivre les nouvelles données ; une période choisie à la main reste en place jusqu'à la fermeture.
+
+## Fichier partagé (v1.5)
+
+`MainWindow` garde `self.espace` (`L.Espace`) et `self.magasin` (ouvert sur `espace.travail`).
+
+- **Chaque action qui modifie la base** commence par `if not self.synchroniser(): return` (avant toute boîte de dialogue : reprend ce qu'un autre PC a publié) et finit par `self.publier()` : ajouter un système, mettre à jour la configuration, liste de log XML / standard, renommer, supprimer, connexion à la centrale enregistrée, récupérer, relire, tout récupérer, importer (une seule publication), glisser-déposer. L'export CSV et les vues ne publient rien.
+- `publier()` : `L.ConflitPublication` → fenêtre de conflit ; `L.PublicationImpossible` → indicateur orange.
+- `_surveiller()` toutes les 30 s et à l'activation de la fenêtre (sauf import ou fenêtre modale en cours) : publie ce qui attend, sinon recharge si un autre PC a publié (`recharger_depuis_partage()`), et signale une fois par session chaque copie en conflit créée par le synchroniseur.
+- Fermeture : `magasin.fermer()`, puis `espace.fermer()` en boucle (conflit → choix ; impossible → « Réessayer / Fermer quand même », la copie locale est alors gardée).
 
 ## Récupération depuis la centrale (v1.1)
 
@@ -146,7 +169,8 @@ Module `engine/elpro_remote.py` (fourni, NE PAS MODIFIER) : connexion HTTP à la
 
 ```python
 import elpro_remote as R
-m.definir_acces(sid, adresse, utilisateur, R.proteger_mdp(mdp)); m.acces(sid)
+m.definir_acces(sid, adresse, utilisateur, R.proteger_mdp(mdp) | None)   # v1.5 : mot de passe de CE PC ; None = inchangé
+m.acces(sid)                         # + mdp_ce_poste (v1.5) ; mdp = celui de ce PC, sinon l'ancien commun
 R.Session(adresse, utilisateur, mdp).identifier()       # {'nom', 'serie'} ; lève R.ErreurCentrale
 R.recuperer(m, sid, forcer=False, progression=f(n, total, nom), annuler=f() -> bool, relire=False)
     # relire=True (v1.4.1) : retélécharge TOUS les fichiers encore sur la centrale, importés avec completer=True
@@ -174,7 +198,8 @@ pyinstaller --noconfirm --windowed --name "ELPRO Logs" --icon "resources\app_ico
 
 | Fichier | Rôle | Écrit par |
 |---|---|---|
-| `Documents\ELPRO Logs\elpro_logs.db` (+ `-wal`, `-shm` pendant l'utilisation), ou l'emplacement choisi dans *Fichier › Emplacement des données* (clé `QSettings` `base/chemin`, v1.3) | Base unique : systèmes, configs, valeurs | le moteur |
+| `Documents\ELPRO Logs\elpro_logs.db`, ou l'emplacement choisi dans *Fichier › Emplacement des données* (clé `QSettings` `base/chemin`, v1.3), éventuellement dans OneDrive ou kDrive (v1.5) | Base unique : systèmes, configs, valeurs. Réécrite d'un seul coup après chaque modification, jamais ouverte par SQLite | le moteur (`L.Espace`) |
+| `%LOCALAPPDATA%\ELPRO Logs\travail\` | Copie de travail de la base (+ `-wal`, `-shm`) pendant l'utilisation ; vide après une fermeture normale (v1.5) | le moteur |
 | `.elpro.json` | Lu à l'ajout d'un système, puis copié dans la base | ELPRO Config |
 | `.log` / `.zip` | Lus à l'import, **non conservés** (toutes les valeurs sont dans la base) | la radio |
 | `.csv` | Export des valeurs ou du journal | le moteur / l'interface |

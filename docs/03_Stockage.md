@@ -2,11 +2,17 @@
 
 ## Emplacement
 
-Un seul fichier pour tous les systèmes : par défaut `Documents\ELPRO Logs\elpro_logs.db` (`L.chemin_base_defaut()`). Pendant l'utilisation, SQLite crée aussi `elpro_logs.db-wal` et `elpro_logs.db-shm` : ne pas les supprimer.
+Un seul fichier pour tous les systèmes : par défaut `Documents\ELPRO Logs\elpro_logs.db`. **Il peut être dans un dossier synchronisé (OneDrive, kDrive…) et utilisé sur plusieurs PC** (v1.5).
 
-**L'emplacement est réglable** (v1.3) : *Fichier › Emplacement des données › Déplacer vers un autre dossier…* (voir `02_Ecrans.md` § 9). Le chemin choisi est mémorisé (`QSettings`, clé `base/chemin`). Si ce dossier n'est plus accessible au démarrage (clé USB retirée, lecteur réseau absent), l'application le signale et ne crée **jamais** de base vide à sa place. Un dossier réseau ou synchronisé (OneDrive, Dropbox…) est déconseillé : l'application avertit avant d'y déplacer la base ; sur un dossier réseau, le moteur utilise le journal classique de SQLite au lieu de WAL.
+ELPRO Logs n'ouvre jamais ce fichier directement. Au démarrage, il le copie dans `%LOCALAPPDATA%\ELPRO Logs\travail\` et travaille sur cette copie. Après chaque modification (import, récupération, configuration…), il réécrit le fichier d'un seul coup ; le synchroniseur ne voit jamais de fichier incomplet ni de fichier `-wal`/`-shm`. À la fermeture, la copie locale est effacée. Si le fichier ne peut pas être réécrit (dossier absent), la copie locale est gardée et enregistrée au prochain démarrage.
 
-**Sauvegarde** : *Fichier › Emplacement des données › Faire une copie de sauvegarde…*, application ouverte (copie cohérente par l'API de sauvegarde SQLite, puis vérifiée). Ou copier `elpro_logs.db` application fermée. Pour passer à un autre PC : installer ELPRO Logs, copier le fichier, puis *Ouvrir une base existante…*.
+Chaque enregistrement porte un numéro. Si un autre PC a enregistré entre-temps, rien n'est écrasé : l'application recharge la version de l'autre PC, ou, si ce PC a aussi des modifications, demande quoi garder (les deux par défaut : la version de ce PC est enregistrée à côté, sous le nom `elpro_logs (copie <PC> <date>).db`).
+
+Mot de passe des centrales : gardé pour chaque PC séparément (chiffré par Windows) ; à saisir une fois sur chaque PC. L'adresse et l'utilisateur sont communs.
+
+**L'emplacement est réglable** (v1.3) : *Fichier › Emplacement des données › Déplacer vers un autre dossier…* (voir `02_Ecrans.md` § 9). Le chemin choisi est mémorisé (`QSettings`, clé `base/chemin`). Si ce dossier n'est plus accessible au démarrage (clé USB retirée, lecteur réseau absent), l'application le signale et ne crée **jamais** de base vide à sa place. Un dossier réseau fonctionne mais est plus lent (l'application avertit avant d'y déplacer la base) ; un dossier synchronisé n'est plus déconseillé (v1.5).
+
+**Sauvegarde** : *Fichier › Emplacement des données › Faire une copie de sauvegarde…*, application ouverte (copie cohérente par l'API de sauvegarde SQLite, puis vérifiée). Ou copier `elpro_logs.db` application fermée. Pour utiliser la base sur un autre PC : la mettre dans un dossier synchronisé (ou la copier), installer ELPRO Logs sur l'autre PC, puis *Ouvrir une base existante…*.
 
 ## Principe
 
@@ -48,10 +54,12 @@ Ordre de grandeur : **5 à 6 Mo par site et par an**. Les valeurs réelles varie
 
 | Table | Contenu |
 |---|---|
-| `meta` | `format` = 1 (version du format de base) |
+| `meta` | `format` = 1 (version du format de base) ; v1.5 : `generation`, `publie_par`, `publie_le`, `ouvert_par`, `ouvert_depuis` (enregistrements du fichier partagé) |
 | `systemes` | id, clé (`system_name`), nom, n° de série de la centrale, ordre |
 | `configs` | versions du `.elpro.json` (compressé), `valable_depuis` |
 | `profils` | liste de log propre à un système (rare) |
+| `acces` | connexion à la centrale : adresse, utilisateur, ancien mot de passe commun (v1.4 et avant), dernière récupération |
+| `mdp_postes` | mot de passe des centrales par poste (PC\compte), chiffré par Windows (v1.5) |
 | `fichiers` | logs importés : nom, empreinte, n° de série, période, lignes |
 | `couverture` | plages continues de données |
 | `blocs` | points (registre, mois) compressés |

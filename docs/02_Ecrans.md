@@ -4,7 +4,14 @@ Toutes les dates affichées et saisies sont en **heure suisse**, au format `JJ.M
 
 ## 1. Fenêtre principale
 
-Titre : `ELPRO Logs`. Barre d'état : `© 2026 Geoazimut SàRL — geoazimut.com` à droite, taille de la base à gauche (`L.Magasin.taille_fichier()`, en Mo).
+Titre : `ELPRO Logs`. Barre d'état : `© 2026 Geoazimut SàRL — geoazimut.com` à droite ; à gauche, l'**indicateur d'enregistrement** (v1.5) puis la taille de la base (`L.Magasin.taille_fichier()`, en Mo ; info-bulle : le fichier partagé).
+
+| Indicateur (v1.5) | Texte | Couleur |
+|---|---|---|
+| Fichier partagé enregistré | « Enregistré à hh:mm » | gris |
+| Enregistrement impossible (`L.PublicationImpossible`, ou fichier partagé introuvable) | « Pas encore enregistré dans le fichier partagé » ; info-bulle : le chemin du fichier partagé et la raison | orange `#EF6C00` |
+
+Un nouvel essai a lieu à chaque surveillance (30 s, et à l'activation de la fenêtre). Quand un autre PC a enregistré et que rien n'attend sur ce PC, la base est rechargée : « Base mise à jour : modifications de <PC> (hh:mm). » (barre d'état, 10 s).
 
 **Un onglet par système** (`QTabWidget`), tous ouverts au démarrage, dans l'ordre de `m.systemes()`. Titre de l'onglet = `nom`. Les onglets ne se ferment pas (pas de croix) : pour retirer un système, menu *Système › Supprimer ce système*.
 
@@ -197,11 +204,11 @@ Les `avertissements` s'affichent sous la ligne du fichier, en orange.
 |---|---|
 | Adresse | `acces['adresse']`, sinon vide (adresse WireGuard propre à chaque centrale) |
 | Utilisateur | `acces['utilisateur']`, sinon `R.UTILISATEUR_DEFAUT` |
-| Mot de passe | masqué ; vide avec le texte gris « (inchangé) » si un mot de passe est déjà enregistré |
-| Note | « Activez d'abord le tunnel WireGuard. » |
+| Mot de passe | masqué ; vide avec le texte gris « (inchangé) » si le mot de passe de **ce PC** est enregistré, « (enregistré sur un autre PC — saisir ici si nécessaire) » s'il n'y a que l'ancien mot de passe commun (v1.4 et avant), rien sinon (v1.5) |
+| Notes | « Activez d'abord le tunnel WireGuard. » puis « Le mot de passe est gardé pour ce PC seulement, chiffré par Windows : saisissez-le une fois sur chaque PC. » (v1.5) |
 
 - **Tester la connexion** (dans un `QThread`) : « Connecté à <nom> (n° <série>) » en vert, ou le message de l'erreur en rouge.
-- **Enregistrer** : `m.definir_acces(sid, adresse, utilisateur, R.proteger_mdp(mdp))` ; champ mot de passe vide : le mot de passe enregistré est gardé tel quel.
+- **Enregistrer** : `m.definir_acces(sid, adresse, utilisateur, R.proteger_mdp(mdp))`, pour ce PC seulement ; champ mot de passe vide : `mdp_protege=None`, le mot de passe de ce PC est inchangé (v1.5). Si le mot de passe de ce PC manque, la récupération renvoie `non_configure` avec le message du moteur (bouton **Connexion à la centrale…**).
 
 ### Récupérer les logs
 
@@ -223,14 +230,32 @@ Les `avertissements` s'affichent sous la ligne du fichier, en orange.
 
 | Élément | Contenu |
 |---|---|
-| Emplacement actuel | `m.chemin` (sélectionnable) + bouton **Ouvrir le dossier** (Explorateur) |
+| Emplacement actuel | le fichier partagé, `MainWindow.chemin_partage` (sélectionnable) + bouton **Ouvrir le dossier** (Explorateur) ; dessous, en gris : « ELPRO Logs travaille sur une copie locale et enregistre ce fichier après chaque modification. Un dossier synchronisé (OneDrive, kDrive…) peut donc être utilisé sur plusieurs PC. » (v1.5) |
 | Taille | `m.taille_fichier()` en Mo, nombre de systèmes |
-| **Déplacer vers un autre dossier…** | Choix d'un dossier → `<dossier>\elpro_logs.db`. Avertissement de `L.avertissement_emplacement()` (réseau, OneDrive…) : « Continuer quand même ? » (Non par défaut). Base déjà présente : « L'ouvrir à la place ? », jamais d'écrasement. `L.copier_base()` dans un `QThread` (barre d'attente), puis ouverture de la copie, clé `base/chemin` enregistrée, onglets rechargés (même onglet actif). Enfin « Supprimer l'ancien fichier ? » (Non par défaut ; Oui supprime aussi `-wal` et `-shm`). Échec : message, l'ancienne base reste active. |
-| **Ouvrir une base existante…** | Filtre « Base ELPRO Logs (*.db) » → `L.verifier_base()` ; si valide : « Ouvrir cette base (n systèmes) ? Les systèmes de la base actuelle ne seront plus affichés (ils restent dans son fichier). » ; sinon son message. |
+| **Déplacer vers un autre dossier…** | Enregistrement d'abord ; s'il reste des modifications non enregistrées : « Les dernières modifications ne sont pas encore enregistrées dans le fichier partagé. Réessayez dans un instant. » (v1.5). Choix d'un dossier → `<dossier>\elpro_logs.db`. Avertissement de `L.avertissement_emplacement()` (réseau) : « Continuer quand même ? » (Non par défaut). Base déjà présente : « L'ouvrir à la place ? », jamais d'écrasement. `L.copier_base()` dans un `QThread` (barre d'attente), puis ouverture de la copie, clé `base/chemin` enregistrée, onglets rechargés (même onglet actif). Enfin « Supprimer l'ancien fichier ? » (Non par défaut ; Oui supprime aussi `-wal` et `-shm`). Échec : message, l'ancienne base reste active. |
+| **Ouvrir une base existante…** | Filtre « Base ELPRO Logs (*.db) » → `L.verifier_partage()` (v1.5) ; si valide : « Ouvrir cette base (n systèmes) ? Les systèmes de la base actuelle ne seront plus affichés (ils restent dans son fichier). » ; sinon son message. |
 | **Faire une copie de sauvegarde…** | Nom proposé `elpro_logs_sauvegarde_AAAA-MM-JJ.db` → `L.copier_base()` (application ouverte) → « Copie enregistrée (x Mo). » Un fichier existant n'est jamais remplacé. |
 | **Revenir à l'emplacement par défaut** | Grisé si la base est déjà à l'emplacement par défaut. Ouvre la base par défaut si elle existe (comme *Ouvrir une base existante*), sinon propose d'y **déplacer** la base actuelle. La clé `base/chemin` est effacée. |
 
 Démarrage avec une base introuvable ou inutilisable : voir `01_Architecture.md`, *Démarrage*.
+
+Changer de base (déplacer, ouvrir une base existante, revenir à l'emplacement par défaut, v1.5) : la base actuelle est d'abord enregistrée, puis la nouvelle est ouverte par `L.Espace` (avertissement « ouvert ailleurs » avec **Continuer** / **Annuler**), puis l'ancienne est fermée (sa copie locale est gardée si elle n'a pas pu être enregistrée).
+
+## 10. Base utilisée sur plusieurs PC (v1.5)
+
+**Base ouverte sur un autre PC** (au démarrage, et en changeant de base) : avertissement, titre « Base ouverte sur un autre PC », texte « D'après le fichier, la base est ouverte sur <PC> depuis le <date heure>. Vous pouvez l'utiliser sur les deux PC : chaque PC reprend automatiquement ce que l'autre enregistre. Seules deux modifications faites presque en même temps vous demanderont un choix. Si <PC> est éteint, ou si ELPRO Logs s'y est mal fermé, ce message n'a pas d'importance. » ; boutons **Continuer** et **Quitter** (au démarrage) ou **Annuler** (changement de base).
+
+**Base modifiée sur un autre PC** (conflit, pendant l'utilisation, au démarrage ou à la fermeture) : avertissement, texte du moteur (« La base a été enregistrée sur <PC> le <date heure>, pendant que vous travailliez sur ce PC. ») puis « Que faire des modifications faites sur ce PC ? » ; texte détaillé « Les logs récupérés sur ce PC peuvent aussi être récupérés à nouveau depuis la centrale (environ 7 jours). »
+
+| Bouton | Ensuite |
+|---|---|
+| **Garder les deux (recommandé)** (par défaut, Échap) | La version de ce PC est enregistrée à côté, « elpro_logs (copie <PC> <date>).db » ; information avec son chemin ; la base affichée est celle de l'autre PC |
+| Garder celle de ce PC | Confirmation « La version enregistrée par <PC> sera remplacée par celle de ce PC. Continuer ? » (Non = retour au choix) |
+| Garder celle de <PC> | Les modifications de ce PC sont abandonnées |
+
+**Copie en conflit** (créée par OneDrive, kDrive… quand la synchronisation était impossible, ex. `elpro_logs-PC-FIXE.db`) : signalée une fois par session, à l'ouverture puis à chaque surveillance ; boutons **Ouvrir le dossier** et **OK**.
+
+**Fermeture impossible à enregistrer** : titre « Fermeture », « Les dernières modifications n'ont pas pu être enregistrées dans le fichier partagé : … Elles restent sur ce PC et seront enregistrées au prochain démarrage d'ELPRO Logs sur ce PC. » ; **Réessayer** et **Fermer quand même**.
 
 ### Relire tous les logs de la centrale (v1.4.1)
 

@@ -2,6 +2,18 @@
 
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation [SemVer](https://semver.org/lang/fr/).
 
+## [1.5.0] — 2026-11-09
+
+### Ajouté
+- La base peut être dans un **dossier synchronisé (OneDrive, kDrive…) et utilisée sur plusieurs PC** : ELPRO Logs travaille sur une copie de travail locale (`%LOCALAPPDATA%\ELPRO Logs\travail`) et réécrit le fichier d'un seul coup après chaque modification (jamais de fichier incomplet ni de `-wal`/`-shm` dans le dossier synchronisé) ; les modifications enregistrées par l'autre PC sont reprises automatiquement ; si les deux PC ont modifié la base presque en même temps, rien n'est écrasé : choix « Garder les deux » (par défaut), « Garder celle de ce PC » ou « Garder celle de l'autre PC ». Indicateur « Enregistré à hh:mm » dans la barre d'état (orange si le fichier ne peut pas être enregistré), avertissement si la base est ouverte sur un autre PC, signalement des copies en conflit créées par le synchroniseur. À la fermeture, la copie locale est effacée ; si l'enregistrement est impossible, elle est gardée et enregistrée au prochain démarrage.
+
+### Modifié
+- Mot de passe des centrales enregistré **séparément sur chaque PC** (chiffré par Windows) : saisissez-le une fois sur chaque PC ; l'adresse et l'utilisateur restent communs.
+- Plus d'avertissement pour déplacer la base dans un dossier synchronisé ; un dossier réseau reste signalé (plus lent).
+
+### Interne
+- Moteur Logs v1.5 (`L.Espace`, `L.verifier_partage`, `L.ConflitPublication`, `L.PublicationImpossible`, table `mdp_postes`) ; 70 tests automatiques.
+
 ## [1.4.1] — 2026-11-02
 
 ### Corrigé

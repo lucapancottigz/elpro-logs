@@ -51,7 +51,7 @@
 
 **Configuration requise :** Windows 10 ou 11, 64 bits. Python n'est pas nécessaire. ELPRO Logs et ELPRO Config s'installent et se désinstallent indépendamment.
 
-**Vos données :** toutes les valeurs importées sont dans `Documents\ELPRO Logs\elpro_logs.db`. Pour les sauvegarder, copier ce fichier application fermée ; pour passer à un autre PC, installer ELPRO Logs puis copier le fichier au même endroit.
+**Vos données :** toutes les valeurs importées sont dans `Documents\ELPRO Logs\elpro_logs.db`, ou à l'emplacement choisi dans **Fichier › Emplacement des données** (copie de sauvegarde au même endroit). Ce fichier peut être dans un dossier synchronisé (OneDrive, kDrive…) et utilisé sur plusieurs PC : ELPRO Logs travaille sur une copie locale et l'enregistre après chaque modification. Le mot de passe des centrales est à saisir une fois sur chaque PC.
 
 **Désinstallation :** Paramètres › Applications › ELPRO Logs › Désinstaller. La base `Documents\ELPRO Logs\elpro_logs.db` est conservée.
 

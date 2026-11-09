@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.join(BASE, 'engine'))
 # ses dépendances. Les importer ici garantit qu'elles sont embarquées dans l'exécutable.
 import io, re, gzip, json, zlib, sqlite3, tarfile, zipfile, hashlib, datetime, threading, csv, contextlib  # noqa: F401,E401
 import secrets, string, copy, zoneinfo, xml.etree.ElementTree  # noqa: F401,E401
+import time, uuid, shutil, getpass  # noqa: F401,E401  (copie de travail et publication, v1.5)
 import base64, html, socket, ctypes, urllib.request, urllib.error, http.client  # noqa: F401,E401  (elpro_remote)
 import tzdata  # noqa: F401  (heure suisse sous Windows)
 
@@ -80,10 +81,11 @@ def main():
     app.setWindowIcon(QIcon(os.path.join(BASE, 'resources', 'app_icon.png')))
 
     from ui.main_window import MainWindow, ouvrir_base_demarrage
-    magasin = ouvrir_base_demarrage()      # base introuvable ou inutilisable : fenêtre de choix, jamais de base vide
-    if magasin is None:
+    ouverte = ouvrir_base_demarrage()      # base introuvable ou inutilisable : fenêtre de choix, jamais de base vide
+    if ouverte is None:
         sys.exit(0)
-    f = MainWindow(BASE, magasin)
+    espace, magasin = ouverte
+    f = MainWindow(BASE, espace, magasin)
     f.show()
     autres = [a for a in sys.argv[1:] if os.path.isfile(a)]
     if autres:

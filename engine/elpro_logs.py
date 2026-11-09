@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2026 Geoazimut SàRL (https://geoazimut.com). Tous droits réservés.
 """
-Moteur ELPRO Logs (v1.4.1) — IMPLÉMENTATION DE RÉFÉRENCE.
+Moteur ELPRO Logs (v1.5) — IMPLÉMENTATION DE RÉFÉRENCE.
 
 Rôle :
   1. lire les fichiers de log (DataLog) des centrales ELPRO 415U-2-C4 ;
@@ -17,6 +17,9 @@ Format du fichier .log (constaté sur radio, firmware 2.59) :
   Horodatages en UTC. Colonne <NOM><nn> = registre (premier registre de l'entrée NOM) + nn - 1.
 
 Stockage : SQLite (un seul fichier pour tous les systèmes).
+  v1.5 : ce fichier (« fichier partagé », souvent dans OneDrive/kDrive) n'est JAMAIS ouvert par SQLite.
+  L'application travaille sur une copie locale (classe Espace) et la publie d'un bloc après chaque
+  modification. Voir « Fichier partagé et copie de travail » plus bas.
   Seuls les CHANGEMENTS de valeur sont stockés, plus la valeur de chaque registre au début
   de chaque plage continue de données. Les points sont regroupés par registre et par mois
   (table « blocs »), codés en varint différentiel puis compressés (zlib). La table « couverture » indique les plages où des
@@ -25,7 +28,8 @@ Stockage : SQLite (un seul fichier pour tous les systèmes).
 Python 3.10+, bibliothèque standard uniquement (+ elpro_engine.py, copie de ELPRO Config).
 Toutes les heures manipulées par le moteur sont des secondes UTC (epoch, entiers).
 """
-import os, io, re, sys, gzip, json, zlib, sqlite3, tarfile, zipfile, hashlib, datetime, threading, contextlib
+import os, io, re, sys, gzip, json, time, uuid, zlib, shutil, socket, getpass, sqlite3, tarfile, zipfile, hashlib, \
+    datetime, threading, contextlib
 
 import elpro_engine as M
 
@@ -566,6 +570,8 @@ CREATE TABLE IF NOT EXISTS configs (
 CREATE TABLE IF NOT EXISTS acces (
     systeme_id INTEGER PRIMARY KEY, adresse TEXT, utilisateur TEXT, mdp BLOB,
     derniere_recuperation INTEGER, dernier_resultat TEXT);
+CREATE TABLE IF NOT EXISTS mdp_postes (
+    systeme_id INTEGER NOT NULL, poste TEXT NOT NULL, mdp BLOB, PRIMARY KEY (systeme_id, poste));
 CREATE TABLE IF NOT EXISTS profils (
     systeme_id INTEGER PRIMARY KEY, json TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS fichiers (
@@ -659,7 +665,6 @@ def maintenant():
 # Emplacement de la base (v1.3)
 # --------------------------------------------------------------------------------------------
 NOM_BASE = 'elpro_logs.db'
-DOSSIERS_SYNCHRONISES = ('onedrive', 'dropbox', 'google drive', 'googledrive', 'icloud', 'nextcloud', 'owncloud')
 
 
 def est_emplacement_reseau(chemin):
@@ -677,16 +682,11 @@ def est_emplacement_reseau(chemin):
 
 
 def avertissement_emplacement(chemin):
-    """Texte d'avertissement si l'emplacement est risqué pour une base SQLite, sinon None."""
+    """Texte d'avertissement si l'emplacement est risqué, sinon None.
+    v1.5 : un dossier synchronisé (OneDrive, kDrive…) est pris en charge (copie de travail locale)."""
     if est_emplacement_reseau(chemin):
-        return ("Ce dossier est sur le réseau. La base fonctionnera, mais plus lentement, et elle risque d'être "
-                "endommagée si la connexion se coupe pendant un import ou si deux personnes l'ouvrent en même "
-                "temps. Un dossier local est recommandé.")
-    bas = os.path.abspath(chemin).lower()
-    if any(m in bas for m in DOSSIERS_SYNCHRONISES):
-        return ("Ce dossier est synchronisé (OneDrive, Dropbox…). La synchronisation pendant que l'application est "
-                "ouverte peut endommager la base ou créer des copies en conflit. Fermez l'application avant toute "
-                "synchronisation, ou choisissez un dossier non synchronisé.")
+        return ("Ce dossier est sur le réseau : l'ouverture et chaque enregistrement seront plus lents. "
+                "Si le réseau est absent au démarrage, la base ne pourra pas être ouverte.")
     return None
 
 
@@ -745,17 +745,406 @@ def chemin_base_defaut():
     return os.path.join(os.path.expanduser('~'), 'Documents', 'ELPRO Logs', 'elpro_logs.db')
 
 
+# --------------------------------------------------------------------------------------------
+# Fichier partagé et copie de travail (v1.5)
+# --------------------------------------------------------------------------------------------
+# Le fichier choisi par l'utilisateur (« fichier partagé ») peut être dans un dossier synchronisé
+# (OneDrive, kDrive…) et ouvert tour à tour sur plusieurs PC. Règles :
+#   1. SQLite n'ouvre JAMAIS le fichier partagé : pas de -wal/-shm ni de verrou dans le dossier synchronisé.
+#      Pour le lire, on le copie d'abord dans le dossier local de travail.
+#   2. L'application travaille sur une copie locale (%LOCALAPPDATA%\ELPRO Logs\travail).
+#   3. Après chaque modification, la copie est « publiée » : copie complète et vérifiée dans un fichier
+#      temporaire du même dossier, puis remplacement d'un seul coup (os.replace). Le synchroniseur ne voit
+#      donc jamais qu'un fichier complet.
+#   4. Chaque publication porte un numéro (« génération », table meta). Avant de publier, on vérifie que le
+#      fichier partagé est toujours celui dont on est parti ; sinon un autre PC a publié entre-temps :
+#      ConflitPublication, rien n'est écrasé sans décision de l'utilisateur.
+#   5. À la fermeture, tout est publié et la copie locale est effacée. Si la publication est impossible
+#      (dossier absent…), la copie locale est gardée et publiée au démarrage suivant.
+META_PARTAGE = ('generation', 'publie_par', 'publie_le', 'ouvert_par', 'ouvert_depuis')
+ESSAIS_REMPLACEMENT = 40                  # × 0,25 s : le synchroniseur peut garder le fichier ouvert un instant
+
+
+def poste_courant():
+    """« PC\\compte » : identifie le poste (mots de passe des centrales, publications)."""
+    pc = os.environ.get('COMPUTERNAME') or socket.gethostname() or 'PC'
+    try:
+        compte = os.environ.get('USERNAME') or getpass.getuser()
+    except Exception:
+        compte = 'utilisateur'
+    return f'{pc}\\{compte}'
+
+
+def nom_poste(poste):
+    """Nom affiché : le nom du PC seul (« PC-FIXE\\luca » -> « PC-FIXE »)."""
+    return (poste or '?').split('\\')[0]
+
+
+def dossier_travail_defaut():
+    base = os.environ.get('LOCALAPPDATA') or os.path.join(os.path.expanduser('~'), '.local', 'share')
+    return os.path.join(base, 'ELPRO Logs', 'travail')
+
+
+def verifier_partage(chemin):
+    """Comme verifier_base, mais sur une copie locale : à utiliser pour tout fichier choisi par l'utilisateur
+    (« Ouvrir une base existante »), qui peut être dans un dossier synchronisé."""
+    if not os.path.isfile(chemin):
+        return verifier_base(chemin)
+    d = dossier_travail_defaut()
+    os.makedirs(d, exist_ok=True)
+    tmp = os.path.join(d, 'verification_' + uuid.uuid4().hex[:8] + '.db')
+    try:
+        shutil.copyfile(chemin, tmp)
+        return verifier_base(tmp)
+    except OSError as e:
+        return {'ok': False, 'message': f'Fichier illisible : {e}', 'nb_systemes': 0, 'format': None}
+    finally:
+        _supprimer(tmp)
+
+
+class ConflitPublication(Exception):
+    """Le fichier partagé a été publié par un autre poste depuis notre dernière lecture.
+    .autre = {generation, publie_par, publie_le, ouvert_par, ouvert_depuis} du fichier partagé."""
+
+    def __init__(self, autre):
+        self.autre = autre
+        quand = heure_locale(int(autre['publie_le']), '%d.%m.%Y %H:%M') if autre.get('publie_le') else '?'
+        super().__init__(f"La base a été enregistrée sur {nom_poste(autre.get('publie_par'))} le {quand}, "
+                         'pendant que vous travailliez sur ce PC.')
+
+
+class PublicationImpossible(Exception):
+    """Fichier partagé inaccessible ou verrouillé : la copie locale est gardée, à republier plus tard."""
+
+
+def _supprimer(chemin):
+    for suf in ('', '-wal', '-shm', '-journal'):
+        try:
+            os.remove(chemin + suf)
+        except FileNotFoundError:
+            pass
+
+
+def _signature(chemin):
+    st = os.stat(chemin)
+    return [st.st_size, st.st_mtime_ns]
+
+
+def _lire_meta(chemin_local):
+    cx = sqlite3.connect(f'file:{os.path.abspath(chemin_local)}?mode=ro', uri=True)
+    try:
+        d = dict(cx.execute('SELECT cle, valeur FROM meta').fetchall())
+    finally:
+        cx.close()
+    return {k: d.get(k) or '' for k in META_PARTAGE}
+
+
+def integrer_wal(chemin):
+    """Migration v1.5 : une base des versions précédentes peut avoir laissé son journal (-wal) à côté d'elle.
+    On l'intègre une fois dans le fichier, qui passe en journal classique. Sans -wal : rien."""
+    if not os.path.exists(chemin + '-wal'):
+        return False
+    cx = sqlite3.connect(chemin, timeout=30)
+    try:
+        cx.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+        cx.execute('PRAGMA journal_mode=DELETE')
+    finally:
+        cx.close()
+    for suf in ('-wal', '-shm'):
+        try:
+            os.remove(chemin + suf)
+        except OSError:
+            pass
+    return True
+
+
+class Espace:
+    """Un fichier partagé et sa copie de travail locale.
+
+    Utilisation par l'interface :
+        e = Espace(chemin_partage)
+        info = e.ouvrir()            # copie locale prête ; info['ouvert_ailleurs'] à signaler
+        e.annoncer()                 # publie « ouvert sur ce PC » (facultatif, après l'avertissement)
+        m = Magasin(e.travail, creer=False)   # toutes les connexions SQLite sur e.travail
+        ... modification ... ; e.publier()    # après CHAQUE modification
+        e.verifier()                 # régulièrement : 'a_jour' | 'modifie' | 'absent'
+        e.recharger()                # si 'modifie' et rien à publier (fermer d'abord les Magasin)
+        e.fermer()                   # fermer d'abord les Magasin ; publie puis efface la copie locale
+    """
+
+    def __init__(self, partage, dossier_travail=None, poste=None):
+        self.partage = os.path.abspath(partage)
+        self.poste = poste or poste_courant()
+        d = dossier_travail or dossier_travail_defaut()
+        os.makedirs(d, exist_ok=True)
+        cle = hashlib.sha1(os.path.normcase(self.partage).encode('utf-8')).hexdigest()[:16]
+        self.travail = os.path.join(d, cle + '.db')
+        self._lecture = os.path.join(d, cle + '.lecture.db')
+        self._chemin_etat = os.path.join(d, cle + '.json')
+        self.generation = None              # génération du fichier partagé dont la copie de travail est issue
+        self.signature = None               # taille et date du fichier partagé à cette génération
+        self.en_attente = False             # modifications locales pas encore publiées
+        self.annonce = False                # « ouvert sur ce PC » publié par nous
+        self.ouvert_depuis = None
+        self.derniere_publication = None
+
+    # ------------------------------------------------------------------ état local (reprise après plantage)
+    def _sauver_etat(self):
+        with open(self._chemin_etat, 'w', encoding='utf-8') as f:
+            json.dump({'partage': self.partage, 'generation': self.generation, 'signature': self.signature,
+                       'en_attente': self.en_attente}, f)
+
+    def _lire_etat(self):
+        try:
+            with open(self._chemin_etat, encoding='utf-8') as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            return None
+
+    def a_reprendre(self):
+        """True si une session précédente a laissé des modifications non publiées sur ce PC."""
+        e = self._lire_etat()
+        return bool(e and e.get('en_attente') and os.path.isfile(self.travail))
+
+    # ------------------------------------------------------------------ lecture du fichier partagé
+    def _copier_partage(self, destination):
+        """Copie le fichier partagé vers `destination` (local) et la contrôle. -> meta du fichier partagé.
+        Lève FileNotFoundError, ou RuntimeError si la copie n'est pas une base valide."""
+        integrer_wal(self.partage)
+        _supprimer(destination)
+        shutil.copyfile(self.partage, destination)
+        v = verifier_base(destination)
+        if not v['ok']:
+            _supprimer(destination)
+            raise RuntimeError(v['message'])
+        return _lire_meta(destination)
+
+    def lire_partage(self):
+        """Meta du fichier partagé (génération, auteur…) sans l'ouvrir avec SQLite. None s'il n'existe pas."""
+        if not os.path.isfile(self.partage):
+            return None
+        try:
+            return self._copier_partage(self._lecture)
+        finally:
+            _supprimer(self._lecture)
+
+    # ------------------------------------------------------------------ ouverture
+    def ouvrir(self, creer=False):
+        """Prépare la copie de travail. -> {'cree', 'repris', 'ouvert_ailleurs': None | {poste, depuis}}.
+        - fichier partagé absent : FileNotFoundError, sauf creer=True (base vide créée et publiée) ;
+        - session précédente non publiée sur ce PC : republiée si le fichier partagé n'a pas changé depuis
+          ('repris' = True), sinon ConflitPublication (l'interface fait choisir, puis appelle resoudre()) ;
+        - ouvert_ailleurs : le fichier indique qu'un autre poste l'a ouvert et pas encore refermé."""
+        info = {'cree': False, 'repris': False, 'ouvert_ailleurs': None}
+        if not os.path.isfile(self.partage):
+            if not creer:
+                raise FileNotFoundError(self.partage)
+            os.makedirs(os.path.dirname(self.partage), exist_ok=True)
+            _supprimer(self.travail)
+            Magasin(self.travail, poste=self.poste).fermer()
+            self.generation, self.signature, self.en_attente = '', None, True
+            self.publier()
+            info['cree'] = True
+            return info
+        etat = self._lire_etat()
+        if etat and etat.get('en_attente') and os.path.isfile(self.travail):
+            # modifications d'une session précédente jamais publiées (plantage, dossier absent…)
+            self.generation, self.signature, self.en_attente = etat.get('generation'), None, True
+            self.publier()                                   # ConflitPublication si le partagé a changé
+            info['repris'] = True
+        else:
+            meta = self._copier_partage(self.travail)
+            self.generation, self.signature, self.en_attente = meta['generation'], _signature(self.partage), False
+            self._sauver_etat()
+        meta = self.lire_partage() if info['repris'] else _lire_meta(self.travail)
+        if meta and meta['ouvert_par'] and meta['ouvert_par'] != self.poste:
+            info['ouvert_ailleurs'] = {'poste': nom_poste(meta['ouvert_par']),
+                                       'depuis': int(meta['ouvert_depuis']) if meta['ouvert_depuis'] else None}
+        return info
+
+    def annoncer(self):
+        """Publie « ouvert sur ce PC » (l'autre PC sera averti s'il ouvre la base en même temps)."""
+        self.ouvert_depuis = maintenant()
+        self.annonce = True
+        self.en_attente = True
+        self.publier()
+
+    # ------------------------------------------------------------------ publication
+    def publier(self, forcer=False, liberer=False):
+        """Publie la copie de travail dans le fichier partagé (remplacement d'un seul coup).
+        forcer=True : écrase même si un autre poste a publié entre-temps (choix explicite de l'utilisateur).
+        liberer=True : retire la mention « ouvert sur ce PC ».
+        Lève ConflitPublication ou PublicationImpossible (la copie locale reste « en attente »)."""
+        self.en_attente = True
+        self._sauver_etat()
+        dossier = os.path.dirname(self.partage)
+        if not os.path.isdir(dossier):
+            raise PublicationImpossible(f'Dossier introuvable : {dossier}')
+        if not forcer and os.path.isfile(self.partage):
+            try:
+                autre = self.lire_partage()
+            except (OSError, RuntimeError, sqlite3.Error) as e:
+                raise PublicationImpossible(f'Fichier partagé illisible pour l\'instant : {e}')
+            if autre['generation'] != (self.generation or ''):
+                raise ConflitPublication(autre)
+        gen = uuid.uuid4().hex
+        tmp = os.path.join(dossier, '~$' + os.path.basename(self.partage) + '.tmp')
+        try:
+            _supprimer(tmp)
+            src = sqlite3.connect(self.travail, timeout=30)
+            dst = sqlite3.connect(tmp)
+            try:
+                src.backup(dst)
+                dst.execute('PRAGMA journal_mode=DELETE')
+                ouvert = self.annonce and not liberer
+                for k, v in (('generation', gen), ('publie_par', self.poste), ('publie_le', str(maintenant())),
+                             ('ouvert_par', self.poste if ouvert else ''),
+                             ('ouvert_depuis', str(self.ouvert_depuis or '') if ouvert else '')):
+                    dst.execute('INSERT OR REPLACE INTO meta VALUES (?,?)', (k, v))
+                dst.commit()
+            finally:
+                dst.close(); src.close()
+            v = verifier_base(tmp)
+            if not v['ok']:
+                raise RuntimeError(v['message'])
+            for k in range(ESSAIS_REMPLACEMENT):
+                try:
+                    os.replace(tmp, self.partage)
+                    break
+                except PermissionError:
+                    if k == ESSAIS_REMPLACEMENT - 1:
+                        raise
+                    time.sleep(0.25)
+        except (OSError, RuntimeError, sqlite3.Error) as e:
+            _supprimer(tmp)
+            raise PublicationImpossible(f'Enregistrement dans le fichier partagé impossible : {e}')
+        self.generation, self.signature, self.en_attente = gen, _signature(self.partage), False
+        self.derniere_publication = maintenant()
+        if liberer:
+            self.annonce = False
+        self._sauver_etat()
+        return gen
+
+    # ------------------------------------------------------------------ suivi des autres postes
+    def verifier(self):
+        """'a_jour' | 'modifie' (un autre poste a publié) | 'absent' (fichier partagé introuvable).
+        Rapide tant que le fichier n'a pas bougé (taille et date)."""
+        if not os.path.isfile(self.partage):
+            return 'absent'
+        sig = _signature(self.partage)
+        if sig == self.signature:
+            return 'a_jour'
+        try:
+            meta = self.lire_partage()
+        except (OSError, RuntimeError, sqlite3.Error):
+            return 'a_jour'                    # en cours d'écriture par le synchroniseur : on reverra plus tard
+        if meta['generation'] == (self.generation or ''):
+            self.signature = sig               # même contenu (date touchée par le synchroniseur)
+            self._sauver_etat()
+            return 'a_jour'
+        return 'modifie'
+
+    def info_partage(self):
+        """Qui a publié le fichier partagé en dernier : {poste, le} (pour les messages)."""
+        meta = self.lire_partage() or {}
+        return {'poste': nom_poste(meta.get('publie_par')),
+                'le': int(meta['publie_le']) if meta.get('publie_le') else None}
+
+    def recharger(self, forcer=False):
+        """Remplace la copie de travail par le fichier partagé. Toutes les connexions Magasin doivent être
+        fermées. Refusé (RuntimeError) s'il reste des modifications non publiées, sauf forcer=True."""
+        if self.en_attente and not forcer:
+            raise RuntimeError('Des modifications de ce PC ne sont pas encore enregistrées dans le fichier partagé.')
+        tmp = self.travail + '.nouveau'
+        meta = self._copier_partage(tmp)
+        _supprimer(self.travail)
+        os.replace(tmp, self.travail)
+        self.generation, self.signature, self.en_attente = meta['generation'], _signature(self.partage), False
+        self._sauver_etat()
+        if self.annonce:                       # notre mention « ouvert » a pu être effacée par l'autre poste
+            self.annonce = meta['ouvert_par'] == self.poste
+        return meta
+
+    def resoudre(self, choix):
+        """Après ConflitPublication. Fermer d'abord les Magasin.
+        'mienne' : la version de ce PC remplace celle de l'autre poste ;
+        'autre'  : la version de l'autre poste est gardée, les modifications de ce PC sont abandonnées ;
+        'les_deux' : la version de ce PC est enregistrée à part, à côté du fichier partagé, puis on prend
+                     celle de l'autre poste. -> chemin de la copie à part (sinon None)."""
+        if choix == 'mienne':
+            self.publier(forcer=True)
+            return None
+        copie = None
+        if choix == 'les_deux':
+            d, n = os.path.split(self.partage)
+            racine, ext = os.path.splitext(n)
+            quand = heure_locale(maintenant(), '%Y-%m-%d %Hh%M')
+            copie = os.path.join(d, f'{racine} (copie {nom_poste(self.poste)} {quand}){ext}')
+            k = 2
+            while os.path.exists(copie):
+                copie = os.path.join(d, f'{racine} (copie {nom_poste(self.poste)} {quand} {k}){ext}'); k += 1
+            copier_base(self.travail, copie)
+        elif choix != 'autre':
+            raise ValueError(choix)
+        self.recharger(forcer=True)
+        return copie
+
+    def copies_en_conflit(self):
+        """Copies créées par le synchroniseur quand deux PC ont modifié le fichier pendant qu'il ne pouvait pas
+        synchroniser (OneDrive : « elpro_logs-PC-FIXE.db » ; Dropbox, kDrive… : « elpro_logs (…).db »).
+        Exclut nos propres copies « (copie … ) » et les fichiers temporaires. -> chemins, du plus récent au plus ancien."""
+        d, n = os.path.split(self.partage)
+        racine, ext = os.path.splitext(n)
+        res = []
+        try:
+            noms = os.listdir(d)
+        except OSError:
+            return []
+        for f in noms:
+            r, e = os.path.splitext(f)
+            if e.lower() != ext.lower() or f == n or f.startswith('~$') or '(copie ' in f:
+                continue
+            if r.startswith(racine + '-') or r.startswith(racine + ' ('):
+                res.append(os.path.join(d, f))
+        return sorted(res, key=lambda c: os.path.getmtime(c), reverse=True)
+
+    # ------------------------------------------------------------------ fermeture
+    def fermer(self):
+        """Fermer d'abord les Magasin. Publie ce qui reste (et retire « ouvert sur ce PC »), puis efface la
+        copie locale. Lève ConflitPublication / PublicationImpossible : la copie locale est alors GARDÉE
+        (reprise au prochain démarrage)."""
+        if self.en_attente:
+            self.publier(liberer=True)
+        elif self.annonce:
+            if self.verifier() == 'a_jour':
+                self.publier(liberer=True)
+            self.annonce = False
+        self.liberer_local()
+
+    def liberer_local(self):
+        """Efface la copie de travail et l'état local (rien n'est publié)."""
+        for c in (self.travail, self._lecture, self.travail + '.nouveau'):
+            _supprimer(c)
+        try:
+            os.remove(self._chemin_etat)
+        except FileNotFoundError:
+            pass
+
+
+
 class Magasin:
     """Accès à la base. Une instance par thread (l'import tourne dans un thread à part)."""
 
-    def __init__(self, chemin, creer=True):
+    def __init__(self, chemin, creer=True, poste=None):
         """creer=False : la base doit déjà exister (FileNotFoundError sinon). À utiliser au démarrage avec
-        l'emplacement choisi par l'utilisateur : ne jamais recréer en silence une base vide."""
+        l'emplacement choisi par l'utilisateur : ne jamais recréer en silence une base vide.
+        poste (v1.5) : « PC\\compte » dont on lit/écrit le mot de passe des centrales (défaut : ce PC)."""
         if not creer and not os.path.isfile(chemin):
             raise FileNotFoundError(chemin)
         d = os.path.dirname(os.path.abspath(chemin))
         os.makedirs(d, exist_ok=True)
         self.chemin = chemin
+        self.poste = poste or poste_courant()
         self.cx = sqlite3.connect(chemin, timeout=30)
         # WAL ne fonctionne pas de façon sûre sur un partage réseau : journal classique dans ce cas
         self.cx.execute('PRAGMA journal_mode=DELETE' if est_emplacement_reseau(chemin) else 'PRAGMA journal_mode=WAL')
@@ -875,7 +1264,7 @@ class Magasin:
         self.cx.execute('UPDATE systemes SET nom=? WHERE id=?', (nom, sid)); self.cx.commit()
 
     def supprimer_systeme(self, sid):
-        for tab in ('blocs', 'couverture', 'fichiers', 'configs', 'profils', 'acces'):
+        for tab in ('blocs', 'couverture', 'fichiers', 'configs', 'profils', 'acces', 'mdp_postes'):
             self.cx.execute(f'DELETE FROM {tab} WHERE systeme_id=?', (sid,))
         self.cx.execute('DELETE FROM systemes WHERE id=?', (sid,))
         self.cx.commit()
@@ -896,20 +1285,32 @@ class Magasin:
 
     # ---------------------------------------------------------------- import des logs
     # ---------------------------------------------------------------- accès à la centrale (v1.1)
-    def definir_acces(self, sid, adresse, utilisateur, mdp_protege):
-        """mdp_protege : octets produits par elpro_remote.proteger_mdp() (jamais le mot de passe en clair)."""
-        ex = self.acces(sid)
+    def definir_acces(self, sid, adresse, utilisateur, mdp_protege=None):
+        """mdp_protege : octets produits par elpro_remote.proteger_mdp() (jamais le mot de passe en clair).
+        v1.5 : le mot de passe est enregistré POUR CE POSTE seulement (le chiffrement Windows ne se lit que
+        sur le PC et le compte qui l'ont fait). None = mot de passe de ce poste inchangé."""
+        r = self.cx.execute('SELECT mdp, derniere_recuperation, dernier_resultat FROM acces WHERE systeme_id=?',
+                            (sid,)).fetchone()
+        ancien, der, res = r if r else (None, None, None)
         self.cx.execute('INSERT OR REPLACE INTO acces VALUES (?,?,?,?,?,?)',
-                        (sid, adresse.strip(), utilisateur.strip(), mdp_protege,
-                         ex['derniere_recuperation'] if ex else None, ex['dernier_resultat'] if ex else None))
+                        (sid, adresse.strip(), utilisateur.strip(), ancien, der, res))
+        if mdp_protege is not None:
+            self.cx.execute('INSERT OR REPLACE INTO mdp_postes VALUES (?,?,?)', (sid, self.poste, mdp_protege))
         self.cx.commit()
 
     def acces(self, sid):
+        """adresse, utilisateur, mdp (celui de CE poste ; à défaut l'ancien mot de passe commun, v1.4 et avant,
+        qui ne se lit que sur le PC qui l'a saisi), mdp_ce_poste (bool), derniere_recuperation, dernier_resultat."""
         r = self.cx.execute('SELECT adresse, utilisateur, mdp, derniere_recuperation, dernier_resultat '
                             'FROM acces WHERE systeme_id=?', (sid,)).fetchone()
         if not r:
             return None
-        return dict(zip(('adresse', 'utilisateur', 'mdp', 'derniere_recuperation', 'dernier_resultat'), r))
+        d = dict(zip(('adresse', 'utilisateur', 'mdp', 'derniere_recuperation', 'dernier_resultat'), r))
+        p = self.cx.execute('SELECT mdp FROM mdp_postes WHERE systeme_id=? AND poste=?', (sid, self.poste)).fetchone()
+        d['mdp_ce_poste'] = bool(p and p[0])
+        if d['mdp_ce_poste']:
+            d['mdp'] = p[0]
+        return d
 
     def noter_recuperation(self, sid, t, resultat):
         self.cx.execute('UPDATE acces SET derniere_recuperation=?, dernier_resultat=? WHERE systeme_id=?',

@@ -171,8 +171,9 @@ def recuperer(magasin, sid, forcer=False, progression=None, annuler=None, sessio
             session = Session(acc['adresse'], acc['utilisateur'] or UTILISATEUR_DEFAUT, retrouver_mdp(acc['mdp']))
         except (ValueError, OSError):
             return dict(rap, statut='non_configure',
-                        message='Mot de passe enregistré illisible sur ce PC ou pour ce compte Windows : '
-                                'saisissez-le à nouveau (Système › Connexion à la centrale).')
+                        message='Mot de passe de la centrale pas encore enregistré sur ce PC : saisissez-le une '
+                                'fois (Système › Connexion à la centrale). Chaque PC garde le sien, chiffré par '
+                                'Windows ; celui des autres PC ne change pas.')
     try:
         # 1. identité de la centrale connectée
         ident = session.identifier()

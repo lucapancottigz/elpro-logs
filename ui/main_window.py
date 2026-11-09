@@ -4,10 +4,10 @@
 glisser-déposer, récupération des logs depuis les centrales, barre d'état (taille de la base, copyright)."""
 import os, sqlite3
 
-from PySide6.QtCore import Qt, QSettings, QStandardPaths, QEventLoop
-from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtCore import Qt, QSettings, QStandardPaths, QEventLoop, QTimer, QEvent, QUrl
+from PySide6.QtGui import QAction, QKeySequence, QDesktopServices
 from PySide6.QtWidgets import (QMainWindow, QTabWidget, QStackedWidget, QWidget, QVBoxLayout, QLabel, QPushButton,
-                               QFileDialog, QMessageBox, QInputDialog, QProgressDialog)
+                               QFileDialog, QMessageBox, QInputDialog, QProgressDialog, QApplication)
 
 import elpro_engine as M
 import elpro_logs as L
@@ -23,6 +23,9 @@ FILTRE_PROJET = 'Projet ELPRO Config (*.elpro.json *.json)'
 FILTRE_LOGS = 'Logs ELPRO (*.log *.zip *.csv);;Tous les fichiers (*)'
 EXT_LOGS = ('.log', '.zip', '.csv')
 CLE_BASE = 'base/chemin'                    # QSettings : emplacement choisi ; absent = emplacement par défaut
+SURVEILLANCE_MS = 30000                     # v1.5 : contrôle du fichier partagé (publications des autres PC)
+PAS_ENREGISTRE = ('Les dernières modifications ne sont pas encore enregistrées dans le fichier partagé. '
+                  'Réessayez dans un instant.')
 
 
 def meme_fichier(a, b):
@@ -51,31 +54,110 @@ def choisir_base(message, reessayer):
     return choix.get(b.clickedButton(), 'quitter')
 
 
+def choisir_reessayer(parent, titre, texte, abandon):
+    """Fenêtre « Réessayer » / `abandon` (« Quitter », « Fermer quand même ») -> True = réessayer."""
+    b = QMessageBox(QMessageBox.Warning, titre, texte, parent=parent)
+    reessayer = b.addButton('Réessayer', QMessageBox.AcceptRole)
+    b.setEscapeButton(b.addButton(abandon, QMessageBox.RejectRole))
+    b.exec()
+    return b.clickedButton() is reessayer
+
+
+def avertir_ouvert_ailleurs(parent, ailleurs, abandon):
+    """Avertissement « Base ouverte sur un autre PC » -> True = continuer, False = `abandon` (Quitter, Annuler)."""
+    poste = ailleurs['poste']
+    depuis = L.heure_locale(ailleurs['depuis'], '%d.%m.%Y %H:%M') if ailleurs['depuis'] else '?'
+    b = QMessageBox(QMessageBox.Warning, 'Base ouverte sur un autre PC',
+                    f'D\'après le fichier, la base est ouverte sur {poste} depuis le {depuis}.\n\n'
+                    'Vous pouvez l\'utiliser sur les deux PC : chaque PC reprend automatiquement ce que l\'autre '
+                    'enregistre. Seules deux modifications faites presque en même temps vous demanderont un choix.\n\n'
+                    f'Si {poste} est éteint, ou si ELPRO Logs s\'y est mal fermé, ce message n\'a pas d\'importance.',
+                    parent=parent)
+    continuer = b.addButton('Continuer', QMessageBox.AcceptRole)
+    b.setEscapeButton(b.addButton(abandon, QMessageBox.RejectRole))
+    b.exec()
+    return b.clickedButton() is continuer
+
+
+def choisir_conflit(parent, exc):
+    """Fenêtre « Base modifiée sur un autre PC » -> 'les_deux' | 'mienne' | 'autre'."""
+    poste = L.nom_poste(exc.autre.get('publie_par'))
+    b = QMessageBox(QMessageBox.Warning, 'Base modifiée sur un autre PC',
+                    f'{exc}\n\nQue faire des modifications faites sur ce PC ?', parent=parent)
+    b.setInformativeText('Les logs récupérés sur ce PC peuvent aussi être récupérés à nouveau depuis la centrale '
+                         '(environ 7 jours).')
+    deux = b.addButton('Garder les deux (recommandé)', QMessageBox.AcceptRole)
+    choix = {deux: 'les_deux', b.addButton('Garder celle de ce PC', QMessageBox.ActionRole): 'mienne',
+             b.addButton(f'Garder celle de {poste}', QMessageBox.ActionRole): 'autre'}
+    b.setDefaultButton(deux)
+    b.setEscapeButton(deux)
+    b.exec()
+    return choix.get(b.clickedButton(), 'les_deux')
+
+
+def resoudre_conflit(parent, espace, exc):
+    """Fenêtre de conflit, puis espace.resoudre(choix). Les Magasin doivent être fermés. Lève comme resoudre."""
+    titre, poste = 'Base modifiée sur un autre PC', L.nom_poste(exc.autre.get('publie_par'))
+    while True:
+        choix = choisir_conflit(parent, exc)
+        if choix != 'mienne' or QMessageBox.question(
+                parent, titre, f'La version enregistrée par {poste} sera remplacée par celle de ce PC. Continuer ?',
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No) == QMessageBox.Yes:
+            break
+    copie = espace.resoudre(choix)
+    if copie:
+        QMessageBox.information(parent, titre, f'Les modifications de ce PC ont été enregistrées à part :\n{copie}\n\n'
+                                f'La base affichée est celle de {poste}. Pour reprendre une donnée de la copie, '
+                                'ouvrez-la avec Fichier › Emplacement des données › Ouvrir une base existante.')
+    return choix
+
+
 def ouvrir_base_demarrage():
-    """Ouvre la base au démarrage (emplacement mémorisé, sinon par défaut). Ne crée JAMAIS de base vide à un
-    emplacement choisi qui a disparu (clé USB retirée, lecteur réseau absent…). None = l'utilisateur quitte."""
+    """Ouvre la base au démarrage (emplacement mémorisé, sinon par défaut) -> (espace, magasin), ou None si
+    l'utilisateur quitte. Le fichier choisi n'est jamais ouvert par SQLite : copie de travail locale (L.Espace).
+    Ne crée JAMAIS de base vide à un emplacement choisi qui a disparu (clé USB retirée, lecteur réseau absent…)."""
     while True:
         chemin = QSettings().value(CLE_BASE) or None
         c = chemin or L.chemin_base_defaut()
+        e = L.Espace(c)
         try:
-            return L.Magasin(chemin, creer=False) if chemin else L.Magasin(c)
+            info = e.ouvrir(creer=not chemin)
         except FileNotFoundError:
             message, reessayer = (f'La base de données est introuvable :\n{c}\n\nLe dossier est peut-être sur un '
                                   'disque ou un lecteur réseau non connecté.'), True
-        except Exception as e:                  # version plus récente, base endommagée, fichier verrouillé…
-            v = L.verifier_base(c)
-            if v['ok']:                         # base saine : souci passager (autre fenêtre ouverte, verrou)
-                message, reessayer = (f'Impossible d\'ouvrir la base de données :\n{c}\n\n{e}\n\n'
-                                      'Fermez les autres fenêtres d\'ELPRO Logs, puis réessayez.'), True
-            else:
-                message, reessayer = f'Impossible d\'ouvrir la base de données :\n{c}\n\n{v["message"]}', False
+        except L.ConflitPublication as x:       # session précédente non publiée, et l'autre PC a publié depuis
+            try:
+                resoudre_conflit(None, e, x)
+            except L.PublicationImpossible:
+                pass                            # la boucle repasse par la reprise, puis « Réessayer / Quitter »
+            continue
+        except L.PublicationImpossible as x:
+            if choisir_reessayer(None, 'ELPRO Logs', 'Les modifications de la dernière session sur ce PC n\'ont pas '
+                                 f'encore pu être enregistrées dans le fichier partagé :\n{x}\n\n'
+                                 'Elles sont gardées sur ce PC.', 'Quitter'):
+                continue
+            return None                         # copie locale gardée, rien de publié
+        except RuntimeError as x:               # pas une base ELPRO Logs, version plus récente…
+            message, reessayer = f'Impossible d\'ouvrir la base de données :\n{c}\n\n{x}', False
+        except Exception as x:                  # fichier verrouillé, souci passager
+            message, reessayer = f'Impossible d\'ouvrir la base de données :\n{c}\n\n{x}', True
+        else:
+            if info['ouvert_ailleurs'] and not avertir_ouvert_ailleurs(None, info['ouvert_ailleurs'], 'Quitter'):
+                e.liberer_local()
+                return None
+            try:
+                e.annoncer()
+            except (L.PublicationImpossible, L.ConflitPublication):
+                pass                            # repris par la surveillance (indicateur orange)
+            e.repris = info['repris']
+            return e, L.Magasin(e.travail, creer=False)
         choix = choisir_base(message, reessayer)
         if choix == 'reessayer':
             continue
         if choix == 'ouvrir':
             f, _ = QFileDialog.getOpenFileName(None, 'Ouvrir une base existante', os.path.dirname(c), FILTRE_BASE)
             if f:
-                v = L.verifier_base(f)
+                v = L.verifier_partage(f)
                 if v['ok']:
                     memoriser_base(f)
                 else:
@@ -92,11 +174,14 @@ def ouvrir_base_demarrage():
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, base, magasin):
+    def __init__(self, base, espace, magasin):
         super().__init__()
         self.base = base
+        self.espace = espace                # v1.5 : fichier partagé et copie de travail (magasin ouvert sur la copie)
         self.magasin = magasin
         self.occupe = False                 # import ou récupération en cours
+        self.ferme = False
+        self.copies_signalees = set()       # copies en conflit du synchroniseur déjà signalées dans cette session
         self.setWindowTitle('ELPRO Logs')
         self.resize(1400, 900)
         self.setAcceptDrops(True)
@@ -131,7 +216,9 @@ class MainWindow(QMainWindow):
 
         self._menus()
 
-        # --- barre d'état : taille de la base à gauche, copyright à droite
+        # --- barre d'état : enregistrement et taille de la base à gauche, copyright à droite
+        self.enregistre = QLabel()
+        self.statusBar().addWidget(self.enregistre)
         self.taille = QLabel()
         self.statusBar().addWidget(self.taille)
         court = APP_COPYRIGHT.split(APP_COMPANY)[0] + APP_COMPANY          # « © 2026 Geoazimut SàRL »
@@ -153,6 +240,17 @@ class MainWindow(QMainWindow):
             if str(self.onglets.widget(k).sid) == str(dernier):
                 self.onglets.setCurrentIndex(k)
         self._maj_etat()
+        self._indicateur()
+        self.minuteur = QTimer(self)
+        self.minuteur.timeout.connect(self._surveiller)
+        self.minuteur.start(SURVEILLANCE_MS)
+        QTimer.singleShot(0, self._apres_ouverture)
+
+    def _apres_ouverture(self):
+        if getattr(self.espace, 'repris', False):
+            self.statusBar().showMessage('Modifications de la dernière session enregistrées dans le fichier partagé.',
+                                         10000)
+        self._surveiller()
 
     # ================================================================ menus
     def _menus(self):
@@ -245,17 +343,150 @@ class MainWindow(QMainWindow):
         except OSError:
             mo = 0
         self.taille.setText(f'Base : {mo:.1f} Mo'.replace('.', ','))
-        self.taille.setToolTip(self.chemin_base)
+        self.taille.setToolTip(self.chemin_partage)
 
     @property
     def chemin_base(self):
-        """Base en cours : tous les threads ouvrent leur propre instance sur ce chemin."""
+        """Copie de travail de la base : tous les threads ouvrent leur propre instance sur ce chemin."""
         return self.magasin.chemin
+
+    @property
+    def chemin_partage(self):
+        """Fichier choisi par l'utilisateur (peut être dans OneDrive, kDrive…) : l'emplacement affiché."""
+        return self.espace.partage
 
     def reouvrir_base(self):
         """Après un import fait par un autre thread : nouvelle connexion (caches de lecture à jour)."""
         self.magasin.fermer()
         self.magasin = L.Magasin(self.chemin_base, creer=False)
+
+    def _sid_actif(self):
+        tab = self.onglet_actif()
+        return tab.sid if tab is not None else None
+
+    def _recharger_onglets(self, actif):
+        """Recrée un onglet par système de la base (après un changement ou un rechargement de la base)."""
+        while self.onglets.count():
+            tab = self.onglets.widget(0)
+            self.onglets.removeTab(0)
+            tab.deleteLater()
+        for s in self.magasin.systemes():
+            tab = self._ajouter_onglet(s)
+            if s['id'] == actif:
+                self.onglets.setCurrentWidget(tab)
+        self._maj_etat()
+
+    # ================================================================ fichier partagé (v1.5)
+    def _indicateur(self, erreur=None, infobulle=None):
+        """« Enregistré à hh:mm » (gris), ou orange si le fichier partagé n'a pas pu être réécrit."""
+        if erreur is None:
+            t = self.espace.derniere_publication
+            self.enregistre.setText(f"Enregistré à {L.heure_locale(t, '%H:%M')}" if t else '')
+            self.enregistre.setStyleSheet('color: gray;')
+            self.enregistre.setToolTip(self.chemin_partage)
+        else:
+            self.enregistre.setText('Pas encore enregistré dans le fichier partagé')
+            self.enregistre.setStyleSheet('color: #EF6C00;')
+            self.enregistre.setToolTip(infobulle or f'{self.chemin_partage}\n{erreur}')
+
+    def publier(self):
+        """Enregistre la copie de travail dans le fichier partagé (après chaque modification)."""
+        try:
+            self.espace.publier()
+        except L.ConflitPublication as e:
+            self.conflit(e)
+        except L.PublicationImpossible as e:
+            self._indicateur(str(e))
+        else:
+            self._indicateur()
+
+    def synchroniser(self):
+        """Au début de chaque action qui modifie la base : reprend d'abord ce qu'un autre PC a enregistré.
+        False = ne rien faire (import ou récupération en cours)."""
+        if self.occupe:
+            return False
+        if self.espace.verifier() == 'modifie':
+            if self.espace.en_attente:
+                self.publier()                      # mène à la fenêtre de conflit
+            else:
+                self.recharger_depuis_partage()
+        return True
+
+    def _onglet_synchronise(self, tab):
+        """synchroniser(), puis l'onglet du même système (recréé si la base a été rechargée). None = rien à faire."""
+        sid = tab.sid if tab is not None else None
+        if not self.synchroniser():
+            return None
+        return self.onglet_de(sid) if sid is not None else self.onglet_actif()
+
+    def recharger_depuis_partage(self):
+        """Un autre PC a enregistré la base et rien n'est en attente ici : on reprend sa version."""
+        attendre_tous()
+        actif = self._sid_actif()
+        self.magasin.fermer()
+        try:
+            meta = self.espace.recharger()
+        except Exception as e:                      # fichier en cours d'écriture par le synchroniseur…
+            meta = None
+            self.statusBar().showMessage(f'Mise à jour de la base impossible pour l\'instant : {e}', 10000)
+        finally:
+            self.magasin = L.Magasin(self.chemin_base, creer=False)
+            self._recharger_onglets(actif)
+        if meta:
+            quand = L.heure_locale(int(meta['publie_le']), '%H:%M') if meta.get('publie_le') else '?'
+            self.statusBar().showMessage(f"Base mise à jour : modifications de {L.nom_poste(meta['publie_par'])} "
+                                         f'({quand}).', 10000)
+
+    def conflit(self, exc):
+        """Un autre PC a enregistré pendant que ce PC avait des modifications : choix, puis base rechargée."""
+        attendre_tous()
+        actif = self._sid_actif()
+        self.magasin.fermer()
+        try:
+            resoudre_conflit(self, self.espace, exc)
+            self._indicateur()
+        except L.PublicationImpossible as e:
+            self._indicateur(str(e))
+        except Exception as e:
+            QMessageBox.critical(self, 'Base modifiée sur un autre PC', str(e))
+        finally:
+            self.magasin = L.Magasin(self.chemin_base, creer=False)
+            self._recharger_onglets(actif)
+
+    def _surveiller(self):
+        """Toutes les 30 s et à l'activation de la fenêtre : publie ce qui attend, reprend les modifications
+        des autres PC, signale les copies en conflit créées par le synchroniseur."""
+        if self.occupe or self.ferme or QApplication.activeModalWidget() is not None:
+            return
+        if self.espace.en_attente:
+            self.publier()
+        else:
+            st = self.espace.verifier()
+            if st == 'modifie':
+                self.recharger_depuis_partage()
+            elif st == 'absent':
+                self._indicateur('', f'Fichier partagé introuvable : {self.chemin_partage}. '
+                                     'Les modifications restent sur ce PC.')
+            else:
+                self._indicateur()
+        for c in self.espace.copies_en_conflit():
+            if c in self.copies_signalees:
+                continue
+            self.copies_signalees.add(c)
+            b = QMessageBox(QMessageBox.Warning, 'Copie en conflit',
+                            'Le synchroniseur (OneDrive, kDrive…) a créé une copie en conflit de la base :\n'
+                            f'{os.path.basename(c)}\n\nElle contient probablement des modifications faites sur deux '
+                            'PC pendant que la synchronisation était impossible. Vérifiez-la (Fichier › Emplacement '
+                            'des données › Ouvrir une base existante), puis supprimez-la.', QMessageBox.Ok, self)
+            dossier = b.addButton('Ouvrir le dossier', QMessageBox.ActionRole)
+            b.exec()
+            if b.clickedButton() is dossier:
+                QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(self.chemin_partage)))
+
+    def changeEvent(self, e):
+        super().changeEvent(e)
+        if e.type() == QEvent.ActivationChange and self.isActiveWindow():
+            self._surveiller()
 
     def _occuper(self, occupe):
         self.occupe = occupe
@@ -272,6 +503,8 @@ class MainWindow(QMainWindow):
 
     # ================================================================ systèmes
     def ajouter_systeme(self, chemin=None):
+        if not self.synchroniser():
+            return
         if chemin is None:
             chemin, _ = QFileDialog.getOpenFileName(self, 'Ajouter un système', self._dossier('dossier_config'),
                                                     FILTRE_PROJET)
@@ -303,6 +536,7 @@ class MainWindow(QMainWindow):
             tab = self._ajouter_onglet(s)
             self.onglets.setCurrentWidget(tab)
             self._maj_etat()
+            self.publier()
             self.statusBar().showMessage(f"Système « {s['nom']} » ajouté. Importez maintenant ses logs.", 8000)
         else:
             tab = self.onglet_de(r['systeme_id'])
@@ -312,8 +546,11 @@ class MainWindow(QMainWindow):
             else:
                 tab.vider_cache()
                 tab.rafraichir()
+                self.publier()
 
     def mettre_a_jour_config(self, chemin=None):
+        if not self.synchroniser():
+            return
         tab = self.onglet_actif()
         if tab is None:
             return
@@ -353,12 +590,15 @@ class MainWindow(QMainWindow):
         tab.vider_cache()
         tab.rafraichir()
         self.onglets.setTabText(self.onglets.indexOf(tab), tab.nom)
+        self.publier()
         if r['statut'] == 'version':
             self.statusBar().showMessage(f'Configuration V{M.version_config(projet)} enregistrée.', 8000)
         else:
             QMessageBox.information(self, titre, 'Cette configuration est déjà celle du système.')
 
     def liste_log_xml(self):
+        if not self.synchroniser():
+            return
         tab = self.onglet_actif()
         if tab is None:
             return
@@ -374,11 +614,14 @@ class MainWindow(QMainWindow):
         self.magasin.definir_profil(tab.sid, profil)
         tab.fichiers.a_jour = False
         tab._actualiser_visible()
+        self.publier()
         QMessageBox.information(self, 'Liste de log',
                                 f'Liste de log propre à cette centrale enregistrée ({len(profil)} entrées).\n'
                                 'Elle s\'applique aux prochains imports.')
 
     def liste_standard(self):
+        if not self.synchroniser():
+            return
         tab = self.onglet_actif()
         if tab is None:
             return
@@ -391,8 +634,11 @@ class MainWindow(QMainWindow):
         self.magasin.definir_profil(tab.sid, None)
         tab.fichiers.a_jour = False
         tab._actualiser_visible()
+        self.publier()
 
     def renommer(self):
+        if not self.synchroniser():
+            return
         tab = self.onglet_actif()
         if tab is None:
             return
@@ -402,8 +648,11 @@ class MainWindow(QMainWindow):
             self.magasin.renommer(tab.sid, nom)
             tab.nom = nom
             self.onglets.setTabText(self.onglets.indexOf(tab), nom)
+            self.publier()
 
     def supprimer(self):
+        if not self.synchroniser():
+            return
         tab = self.onglet_actif()
         if tab is None:
             return
@@ -425,22 +674,24 @@ class MainWindow(QMainWindow):
         self.onglets.removeTab(self.onglets.indexOf(tab))
         tab.deleteLater()
         self._maj_etat()
+        self.publier()
 
     # ================================================================ récupération depuis la centrale
     def connexion_centrale(self, tab=None):
         """Système › Connexion à la centrale. True si la connexion a été enregistrée."""
-        tab = tab or self.onglet_actif()
+        tab = self._onglet_synchronise(tab or self.onglet_actif())
         if tab is None:
             return False
         ok = bool(ConnexionCentrale(self, self.magasin, tab.sid, tab.nom).exec())
         if ok:
             tab.maj_recuperation()
             self._maj_etat()
+            self.publier()
         return ok
 
     def relire_logs(self, tab=None):
         """Système › Relire tous les logs de la centrale (v1.4.1) : complète les colonnes jamais lues."""
-        tab = tab or self.onglet_actif()
+        tab = self._onglet_synchronise(tab or self.onglet_actif())
         if tab is None or not (self.magasin.acces(tab.sid) or {}).get('adresse'):
             return
         if QMessageBox.question(self, f'Relire tous les logs — {tab.nom}',
@@ -451,7 +702,7 @@ class MainWindow(QMainWindow):
             self.recuperer_logs(tab, relire=True)
 
     def recuperer_logs(self, tab=None, forcer=False, relire=False):
-        tab = tab or self.onglet_actif()
+        tab = self._onglet_synchronise(tab or self.onglet_actif())
         if tab is None:
             return
         if not self.magasin.acces(tab.sid) and not self.connexion_centrale(tab):
@@ -467,7 +718,8 @@ class MainWindow(QMainWindow):
         self.reouvrir_base()
         tab.rafraichir(apres_import=True)
         self._maj_taille()
-        self.afficher_recuperation(tab, rap, relire)
+        self.publier()                              # aussi pour « rien de nouveau » (date de récupération notée)
+        self.afficher_recuperation(self.onglet_de(tab.sid) or tab, rap, relire)
 
     def afficher_recuperation(self, tab, rap, relire=False):
         """Affichage selon le statut du rapport (textes du moteur)."""
@@ -496,7 +748,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, titre, msg)
 
     def tout_recuperer(self):
-        if not self.action_tout_recuperer.isEnabled():
+        if not self.action_tout_recuperer.isEnabled() or not self.synchroniser():
             return
         self._occuper(True)
         try:
@@ -509,11 +761,14 @@ class MainWindow(QMainWindow):
         for k in range(self.onglets.count()):
             self.onglets.widget(k).rafraichir(apres_import=True)
         self._maj_taille()
+        self.publier()
         self.rapport = RapportRecuperationTout(self, d.rapport or [])
         self.rapport.exec()
 
     # ================================================================ import des logs
     def importer_logs(self, chemins=None):
+        if not self.synchroniser():
+            return
         tab = self.onglet_actif()
         if tab is None:
             QMessageBox.information(self, 'Importer des logs', 'Ajoutez d\'abord un système (.elpro.json).')
@@ -543,6 +798,7 @@ class MainWindow(QMainWindow):
         self.reouvrir_base()
         tab.rafraichir(apres_import=True)
         self._maj_taille()
+        self.publier()                              # une seule publication, imports forcés compris
         self.rapport = RapportImport(self, resultats, annule)
         self.rapport.exec()
 
@@ -596,7 +852,7 @@ class MainWindow(QMainWindow):
         EmplacementDonnees(self).exec()
 
     def est_par_defaut(self):
-        return meme_fichier(self.chemin_base, L.chemin_base_defaut())
+        return meme_fichier(self.chemin_partage, L.chemin_base_defaut())
 
     def _en_attente(self, texte, fonction):
         """fonction() dans un thread, avec une barre d'attente ; renvoie son résultat ou relève son exception."""
@@ -618,23 +874,35 @@ class MainWindow(QMainWindow):
 
     def changer_base(self, chemin):
         """Ouvre la base `chemin` (elle doit exister) à la place de l'actuelle et recharge les onglets.
-        En cas d'échec, l'exception remonte et la base actuelle reste active."""
+        True si ouverte, False si l'utilisateur annule. En cas d'échec, l'exception remonte et la base actuelle
+        reste active."""
+        self.publier()
+        if self.espace.en_attente:
+            raise RuntimeError(PAS_ENREGISTRE)
         attendre_tous()
-        nouveau = L.Magasin(chemin, creer=False)
-        tab = self.onglet_actif()
-        actif = tab.sid if tab is not None else None
+        e = L.Espace(chemin)
+        info = e.ouvrir()
+        if info['ouvert_ailleurs'] and not avertir_ouvert_ailleurs(self, info['ouvert_ailleurs'], 'Annuler'):
+            e.liberer_local()
+            return False
+        try:
+            e.annoncer()
+        except (L.PublicationImpossible, L.ConflitPublication):
+            pass                                    # repris par la surveillance
+        nouveau = L.Magasin(e.travail, creer=False)
+        actif = self._sid_actif()
         self.magasin.fermer()
-        self.magasin = nouveau
+        try:
+            self.espace.fermer()
+        except (L.ConflitPublication, L.PublicationImpossible) as x:
+            QMessageBox.warning(self, 'Emplacement des données',
+                                f'L\'ancienne base n\'a pas pu être enregistrée :\n{x}\n\n'
+                                'Sa copie locale est gardée sur ce PC ; elle sera enregistrée à sa prochaine ouverture.')
+        self.espace, self.magasin = e, nouveau
         memoriser_base(chemin)
-        while self.onglets.count():
-            tab = self.onglets.widget(0)
-            self.onglets.removeTab(0)
-            tab.deleteLater()
-        for s in self.magasin.systemes():
-            tab = self._ajouter_onglet(s)
-            if s['id'] == actif:
-                self.onglets.setCurrentWidget(tab)
-        self._maj_etat()
+        self._recharger_onglets(actif)
+        self._indicateur()
+        return True
 
     def deplacer_base(self, dossier):
         """Copie la base dans `dossier`, l'ouvre à la place de l'actuelle, puis propose de supprimer l'ancienne."""
@@ -649,11 +917,16 @@ class MainWindow(QMainWindow):
                                     'L\'ouvrir à la place ?') == QMessageBox.Yes:
                 return self.ouvrir_base_existante(dest)
             return False
-        ancien = self.chemin_base
+        self.publier()
+        if self.espace.en_attente:
+            QMessageBox.warning(self, titre, PAS_ENREGISTRE)
+            return False
+        ancien, travail = self.chemin_partage, self.chemin_base
         attendre_tous()
         try:
-            self._en_attente('Copie de la base…', lambda: L.copier_base(ancien, dest))
-            self.changer_base(dest)
+            self._en_attente('Copie de la base…', lambda: L.copier_base(travail, dest))
+            if not self.changer_base(dest):
+                return False
         except Exception as e:
             QMessageBox.critical(self, titre, f'La base n\'a pas été déplacée (l\'ancienne reste utilisée) :\n{e}')
             return False
@@ -670,10 +943,10 @@ class MainWindow(QMainWindow):
 
     def ouvrir_base_existante(self, chemin):
         titre = 'Ouvrir une base existante'
-        if meme_fichier(chemin, self.chemin_base):
+        if meme_fichier(chemin, self.chemin_partage):
             QMessageBox.information(self, titre, 'Cette base est déjà ouverte.')
             return False
-        v = L.verifier_base(chemin)
+        v = L.verifier_partage(chemin)
         if not v['ok']:
             QMessageBox.warning(self, titre, v['message'])
             return False
@@ -682,7 +955,8 @@ class MainWindow(QMainWindow):
                                 ) != QMessageBox.Yes:
             return False
         try:
-            self.changer_base(chemin)
+            if not self.changer_base(chemin):
+                return False
         except Exception as e:
             QMessageBox.critical(self, titre, f'Impossible d\'ouvrir cette base :\n{e}')
             return False
@@ -737,6 +1011,26 @@ class MainWindow(QMainWindow):
         tab = self.onglet_actif()
         if tab is not None:
             QSettings().setValue('dernier_systeme', tab.sid)
+        self.ferme = True
+        self.minuteur.stop()
         attendre_tous()
         self.magasin.fermer()
+        while True:                                 # tout publier, puis effacer la copie locale
+            try:
+                self.espace.fermer()
+                break
+            except L.ConflitPublication as x:
+                try:
+                    resoudre_conflit(self, self.espace, x)
+                except L.PublicationImpossible:
+                    pass                            # le tour suivant propose Réessayer / Fermer quand même
+                except Exception as y:
+                    QMessageBox.critical(self, 'Fermeture', str(y))
+                    break
+            except L.PublicationImpossible as x:
+                if not choisir_reessayer(self, 'Fermeture', 'Les dernières modifications n\'ont pas pu être '
+                                         f'enregistrées dans le fichier partagé :\n{x}\n\nElles restent sur ce PC '
+                                         'et seront enregistrées au prochain démarrage d\'ELPRO Logs sur ce PC.',
+                                         'Fermer quand même'):
+                    break
         e.accept()
